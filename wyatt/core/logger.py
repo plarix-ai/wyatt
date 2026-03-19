@@ -10,6 +10,7 @@ Connects to:
 """
 
 import sys
+from typing import Any, cast
 
 import structlog
 
@@ -36,13 +37,13 @@ def get_logger(name: str) -> structlog.BoundLogger:
     Returns:
         A bound logger that outputs JSON
     """
-    return structlog.get_logger(name)
+    return cast(structlog.BoundLogger, structlog.get_logger(name))
 
 
 def log_enforcement(
     operation: str,
     principal: str,
-    state_delta: dict,
+    state_delta: dict[str, Any],
     decision: str,
     policy_basis: str,
 ) -> None:

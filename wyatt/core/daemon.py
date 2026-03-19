@@ -116,7 +116,7 @@ class WyattDaemon:
             # Tool execution happens AFTER policy allows it
             # If the tool fails, that's a separate concern from policy
             result = tool_callable(**args)
-            return result  # type: ignore[return-value]
+            return result
 
         else:
             # Policy denied
