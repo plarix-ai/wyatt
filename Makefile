@@ -12,7 +12,7 @@ help:
 	@echo "  make clean      - Clean up containers and cache"
 
 install:
-	pip install httpx pydantic structlog pytest pytest-asyncio
+	python3 -m pip install -e ".[dev]"
 
 start:
 	docker compose up -d
