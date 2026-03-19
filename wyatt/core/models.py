@@ -11,7 +11,7 @@ Connects to:
 - enforcer.py: Policy basis comes from OPA decision
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -66,7 +66,7 @@ class EnforcementLog(BaseModel):
         policy_basis: From CEE
     """
 
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     operation: str
     principal: str
     state_delta: dict[str, Any]
