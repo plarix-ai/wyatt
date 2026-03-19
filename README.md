@@ -1,2 +1,2 @@
-# wyatt
+# Wyatt
 THE PRODUCT
