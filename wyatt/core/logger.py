@@ -15,12 +15,18 @@ from typing import Any
 import structlog
 
 
+# Fields are emitted in this order so audit logs scan quickly.
+_CEE_FIELD_ORDER = [
+    "event", "timestamp", "level",
+    "decision", "operation", "principal", "policy_basis", "state_delta",
+]
+
+
 def _order_cee_fields(
     logger: Any, method: str, event_dict: dict[str, Any]
 ) -> dict[str, Any]:
     """Put standard fields first so CEE logs scan easily."""
-    key_order = ["event", "timestamp", "level", "decision", "operation", "principal", "policy_basis", "state_delta"]
-    ordered: dict[str, Any] = {k: event_dict[k] for k in key_order if k in event_dict}
+    ordered: dict[str, Any] = {k: event_dict[k] for k in _CEE_FIELD_ORDER if k in event_dict}
     ordered.update({k: v for k, v in event_dict.items() if k not in ordered})
     return ordered
 
