@@ -34,8 +34,8 @@ def read_file(path: str) -> str:
 
     This is a PERMITTED tool for agent-001.
     """
-    # For demo purposes, we'll just simulate reading
-    return f"[Simulated] Contents of {path}: Lorem ipsum dolor sit amet..."
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        return f.read().strip()
 
 
 def delete_database(name: str) -> str:
@@ -86,7 +86,7 @@ async def run_agent():
             agent_id=agent_id,
             tool_name="read_file",
             tool_callable=read_file,
-            tool_args={"path": "/etc/passwd"},
+            tool_args={"path": "/etc/hostname"},
         )
         print(f"✓ Tool executed successfully")
         print(f"  Result: {result}")
