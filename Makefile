@@ -12,7 +12,7 @@ help:
 	@echo "  make clean      - Clean up containers and cache"
 
 install:
-	pip install -e ".[dev]"
+	pip install httpx pydantic structlog pytest pytest-asyncio
 
 start:
 	docker-compose up -d
@@ -26,7 +26,7 @@ stop:
 	docker-compose down
 
 test:
-	pytest -v
+	PYTHONPATH=. python3 -m pytest tests/ -v
 
 logs:
 	docker-compose logs -f opa
