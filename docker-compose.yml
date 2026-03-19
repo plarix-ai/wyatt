@@ -13,8 +13,5 @@ services:
       - "--server"
       - "--addr=0.0.0.0:8181"
       - "/policies"
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8181/health"]
-      interval: 5s
-      timeout: 3s
-      retries: 3
+    # Note: OPA container is distroless (no wget/curl/shell)
+    # Health can be verified externally: curl http://localhost:8181/health
