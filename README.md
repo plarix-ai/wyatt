@@ -39,7 +39,8 @@ Every interception produces exactly one CEE:
 
 ```json
 {
-  "timestamp": "2026-03-19T12:00:00Z",
+  "timestamp": "2026-03-19T12:00:00.000000Z",
+  "event": "enforcement_decision",
   "operation": "read_file",
   "principal": "agent-001",
   "state_delta": {"path": "/etc/passwd"},
@@ -241,7 +242,7 @@ wyatt/
 ✅ **OPA integration via REST API**
 ✅ **PolicyViolationError on deny**
 ✅ **Async daemon for tool execution**
-✅ **18 passing tests**
+✅ **17 passing tests**
 ✅ **Runnable example demonstrating all scenarios**
 
 ### Limitations
