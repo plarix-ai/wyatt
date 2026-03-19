@@ -194,7 +194,7 @@ make test
 PYTHONPATH=. python3 -m pytest tests/ -v
 ```
 
-**Expected:** 18 tests passing
+**Expected:** 17 tests passing
 
 Tests verify:
 - CEE structure and logging
