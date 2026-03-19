@@ -15,7 +15,7 @@ allow := {"allowed": true, "reason": reason} if {
 allow := {"allowed": false, "reason": reason} if {
     # Explicit deny if not permitted
     not is_permitted
-    reason := "Denied by default policy"
+    reason := sprintf("Denied by default policy: %s is not permitted to %s", [input.agent, input.tool])
 }
 
 # ALLOWLIST
