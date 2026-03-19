@@ -70,7 +70,7 @@ class WyattDaemon:
             EnforcerError: If communication with OPA fails
 
         Example:
-            async def read_file(path: str) -> str:
+            def read_file(path: str) -> str:
                 return open(path).read()
 
             result = await daemon.execute_tool(
@@ -79,6 +79,10 @@ class WyattDaemon:
                 tool_callable=read_file,
                 tool_args={"path": "/etc/passwd"}
             )
+
+        Note:
+            v0.1.0 only supports synchronous tool callables. Async tools
+            are planned for a future version.
         """
         args = tool_args or {}
 
