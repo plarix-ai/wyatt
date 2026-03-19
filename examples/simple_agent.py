@@ -70,17 +70,8 @@ async def run_agent():
     daemon = WyattDaemon()
     agent_id = "agent-001"
 
-    print("=" * 80)
-    print("WYATT v0.1.0 - Policy Enforcement Demonstration")
-    print("=" * 80)
-    print()
-
-    # ========================================================================
     # SCENARIO 1: Permitted Tool
-    # ========================================================================
-    print("SCENARIO 1: Agent attempts to use PERMITTED tool (read_file)")
-    print("-" * 80)
-
+    print("SCENARIO 1: read_file (permitted)")
     try:
         result = await daemon.execute_tool(
             agent_id=agent_id,
@@ -88,19 +79,14 @@ async def run_agent():
             tool_callable=read_file,
             tool_args={"path": "/etc/passwd"},
         )
-        print(f"✓ Tool executed successfully")
-        print(f"  Result: {result}")
+        print(f"✓ result: {result}")
     except PolicyViolationError as e:
-        print(f"✗ Policy denied (unexpected!): {e}")
+        print(f"✗ denied (unexpected): {e}")
 
     print()
 
-    # ========================================================================
     # SCENARIO 2: Forbidden Tool (in policy but not permitted for this agent)
-    # ========================================================================
-    print("SCENARIO 2: Agent attempts to use FORBIDDEN tool (delete_database)")
-    print("-" * 80)
-
+    print("SCENARIO 2: delete_database (forbidden)")
     try:
         result = await daemon.execute_tool(
             agent_id=agent_id,
@@ -108,19 +94,14 @@ async def run_agent():
             tool_callable=delete_database,
             tool_args={"name": "production"},
         )
-        print(f"✗ Tool executed (SHOULD NEVER HAPPEN!): {result}")
+        print(f"✗ executed (SHOULD NEVER HAPPEN): {result}")
     except PolicyViolationError as e:
-        print(f"✓ Policy blocked execution")
-        print(f"  Reason: {e.reason}")
+        print(f"✓ blocked: {e.reason}")
 
     print()
 
-    # ========================================================================
     # SCENARIO 3: Unknown Tool (deny by default)
-    # ========================================================================
-    print("SCENARIO 3: Agent attempts to use UNKNOWN tool (hack_system)")
-    print("-" * 80)
-
+    print("SCENARIO 3: hack_system (unknown — deny by default)")
     try:
         result = await daemon.execute_tool(
             agent_id=agent_id,
@@ -128,15 +109,9 @@ async def run_agent():
             tool_callable=hack_system,
             tool_args={"target": "mainframe"},
         )
-        print(f"✗ Tool executed (SHOULD NEVER HAPPEN!): {result}")
+        print(f"✗ executed (SHOULD NEVER HAPPEN): {result}")
     except PolicyViolationError as e:
-        print(f"✓ Policy blocked execution (deny by default)")
-        print(f"  Reason: {e.reason}")
-
-    print()
-    print("=" * 80)
-    print("All scenarios completed. Check the JSON logs above for CEE records.")
-    print("=" * 80)
+        print(f"✓ blocked: {e.reason}")
 
 
 # ============================================================================
@@ -146,16 +121,13 @@ async def run_agent():
 
 def main():
     """Entry point."""
-    print("\nStarting agent...")
-    print("CEE logs will appear as JSON between scenarios\n")
-
     try:
         asyncio.run(run_agent())
     except KeyboardInterrupt:
-        print("\n\nAgent interrupted by user")
+        print("\nAgent interrupted by user")
         sys.exit(0)
     except Exception as e:
-        print(f"\n\nAgent failed with error: {e}")
+        print(f"\nAgent failed with error: {e}")
         sys.exit(1)
 
 

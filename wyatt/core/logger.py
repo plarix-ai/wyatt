@@ -10,14 +10,33 @@ Connects to:
 """
 
 import sys
+from typing import Any
 
 import structlog
+
+
+# Fields are emitted in this order so audit logs scan quickly.
+_CEE_FIELD_ORDER = [
+    "event", "timestamp", "level",
+    "decision", "operation", "principal", "policy_basis", "state_delta",
+]
+
+
+def _order_cee_fields(
+    logger: Any, method: str, event_dict: dict[str, Any]
+) -> dict[str, Any]:
+    """Put standard fields first so CEE logs scan easily."""
+    ordered: dict[str, Any] = {k: event_dict[k] for k in _CEE_FIELD_ORDER if k in event_dict}
+    ordered.update({k: v for k, v in event_dict.items() if k not in ordered})
+    return ordered
+
 
 # Configure structlog for JSON output
 structlog.configure(
     processors=[
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.add_log_level,
+        _order_cee_fields,
         structlog.processors.JSONRenderer(),
     ],
     context_class=dict,
