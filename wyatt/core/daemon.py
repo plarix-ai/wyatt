@@ -16,7 +16,8 @@ Connects to:
 - examples/simple_agent.py: Agents call execute_tool()
 """
 
-from typing import Any, Callable, TypeVar
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 from wyatt.core.enforcer import PolicyEnforcer
 from wyatt.core.exceptions import PolicyViolationError

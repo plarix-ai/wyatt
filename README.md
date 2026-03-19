@@ -60,7 +60,7 @@ Four fields that matter:
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.11+
 - Docker & Docker Compose
 - pip
 
@@ -70,8 +70,8 @@ Four fields that matter:
 # Clone the repository
 cd wyatt
 
-# Install dependencies
-pip install httpx pydantic structlog pytest pytest-asyncio
+# Install package + dev dependencies
+python3 -m pip install -e ".[dev]"
 
 # Start OPA sidecar
 make start

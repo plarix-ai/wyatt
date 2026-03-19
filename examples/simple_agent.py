@@ -16,15 +16,15 @@ import asyncio
 import io
 import json
 import sys
+from collections.abc import Callable
 from contextlib import redirect_stdout
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 # Add parent directory to path so we can import wyatt
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from wyatt.core import PolicyViolationError, WyattDaemon
-
 
 # ============================================================================
 # TOOL DEFINITIONS
@@ -38,7 +38,7 @@ def read_file(path: str) -> str:
 
     This is a PERMITTED tool for agent-001.
     """
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
+    with open(path, encoding="utf-8", errors="replace") as f:
         return f.read().strip()
 
 
