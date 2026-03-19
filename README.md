@@ -94,17 +94,26 @@ python3 examples/simple_agent.py
 **Expected output:**
 
 ```
-SCENARIO 1: Agent attempts to use PERMITTED tool (read_file)
-{"operation": "read_file", "decision": "ALLOW", ...}
-✓ Tool executed successfully
+SCENARIO: permitted tool: read_file
+INPUT:    {"agent": "agent-001", "tool": "read_file", "args": {"path": "/etc/hostname"}}
+DECISION: ALLOW
+REASON:   Permitted: agent-001 allowed to read_file
+OUTPUT:   tool executed successfully: <file contents>
+CEE LOG:  {"operation":"read_file",...,"decision":"ALLOW",...}
 
-SCENARIO 2: Agent attempts to use FORBIDDEN tool (delete_database)
-{"operation": "delete_database", "decision": "DENY", ...}
-✓ Policy blocked execution
+SCENARIO: forbidden tool: delete_database
+INPUT:    {"agent": "agent-001", "tool": "delete_database", "args": {"name": "production"}}
+DECISION: DENY
+REASON:   Denied by default policy: agent-001 is not permitted to delete_database
+OUTPUT:   execution blocked: Denied by default policy: agent-001 is not permitted to delete_database
+CEE LOG:  {"operation":"delete_database",...,"decision":"DENY",...}
 
-SCENARIO 3: Agent attempts to use UNKNOWN tool (hack_system)
-{"operation": "hack_system", "decision": "DENY", ...}
-✓ Policy blocked execution (deny by default)
+SCENARIO: unknown tool: hack_system
+INPUT:    {"agent": "agent-001", "tool": "hack_system", "args": {"target": "mainframe"}}
+DECISION: DENY
+REASON:   Denied by default policy: agent-001 is not permitted to hack_system
+OUTPUT:   execution blocked: Denied by default policy: agent-001 is not permitted to hack_system
+CEE LOG:  {"operation":"hack_system",...,"decision":"DENY",...}
 ```
 
 Each scenario produces a structured CEE log entry showing the enforcement decision.
