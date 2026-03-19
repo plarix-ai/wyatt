@@ -5,10 +5,8 @@ Verifies CEE structure and structured logging output.
 """
 
 import json
-from datetime import datetime
-from io import StringIO
 
-from wyatt.core.models import CanonicalExecutionEvent, EnforcementLog, PolicyDecision
+from wyatt.core.models import CanonicalExecutionEvent, PolicyDecision
 
 
 def test_cee_creation():
@@ -35,44 +33,6 @@ def test_policy_decision_creation():
     assert allowed.reason == "Permitted by rule X"
     assert denied.allowed is False
     assert denied.reason == "Deny by default"
-
-
-def test_enforcement_log_from_cee():
-    """EnforcementLog can be created from CEE."""
-    cee = CanonicalExecutionEvent(
-        operation="delete_file",
-        principal="agent-002",
-        state_delta={"path": "/tmp/test.txt"},
-        policy_basis="Deny by default",
-    )
-
-    log = EnforcementLog.from_cee(cee, decision="DENY")
-
-    assert log.operation == "delete_file"
-    assert log.principal == "agent-002"
-    assert log.state_delta == {"path": "/tmp/test.txt"}
-    assert log.decision == "DENY"
-    assert log.policy_basis == "Deny by default"
-    assert isinstance(log.timestamp, datetime)
-
-
-def test_enforcement_log_serialization():
-    """EnforcementLog can be serialized to JSON."""
-    cee = CanonicalExecutionEvent(
-        operation="read_file",
-        principal="agent-001",
-        state_delta={"path": "/etc/passwd"},
-        policy_basis="Permitted",
-    )
-
-    log = EnforcementLog.from_cee(cee, decision="ALLOW")
-    json_str = log.model_dump_json()
-    parsed = json.loads(json_str)
-
-    assert parsed["operation"] == "read_file"
-    assert parsed["principal"] == "agent-001"
-    assert parsed["decision"] == "ALLOW"
-    assert "timestamp" in parsed
 
 
 def test_logger_output_structure(capsys):

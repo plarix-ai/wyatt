@@ -12,12 +12,11 @@ This package contains the four core components:
 from wyatt.core.daemon import WyattDaemon
 from wyatt.core.exceptions import EnforcerError, PolicyViolationError, WyattError
 from wyatt.core.logger import log_enforcement
-from wyatt.core.models import CanonicalExecutionEvent, EnforcementLog, PolicyDecision
+from wyatt.core.models import CanonicalExecutionEvent, PolicyDecision
 
 __all__ = [
     "WyattDaemon",
     "CanonicalExecutionEvent",
-    "EnforcementLog",
     "PolicyDecision",
     "WyattError",
     "PolicyViolationError",
