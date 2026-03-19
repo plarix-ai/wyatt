@@ -59,3 +59,23 @@ def test_logger_output_structure(capsys):
     assert log_data["decision"] == "ALLOW"
     assert log_data["policy_basis"] == "Test policy"
     assert "timestamp" in log_data
+
+
+def test_example_agent_outputs_required_scenario_format(capsys):
+    """Example agent prints the required scenario/input/decision/reason/output/CEE format."""
+    from examples.simple_agent import main
+
+    main()
+
+    captured = capsys.readouterr().out
+
+    assert "SCENARIO: permitted tool: read_file" in captured
+    assert 'INPUT:    {"agent": "agent-001", "tool": "read_file"' in captured
+    assert "DECISION: ALLOW" in captured
+    assert "REASON:   Permitted: agent-001 allowed to read_file" in captured
+    assert "OUTPUT:   tool executed successfully:" in captured
+    assert 'CEE LOG:  {"operation": "read_file"' in captured
+
+    assert "SCENARIO: forbidden tool: delete_database" in captured
+    assert "DECISION: DENY" in captured
+    assert "SCENARIO: unknown tool: hack_system" in captured

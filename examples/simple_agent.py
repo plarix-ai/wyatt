@@ -13,8 +13,12 @@ Expected output: Three CEE log entries showing enforcement decisions.
 """
 
 import asyncio
+import io
+import json
 import sys
+from contextlib import redirect_stdout
 from pathlib import Path
+from typing import Any, Callable
 
 # Add parent directory to path so we can import wyatt
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -70,73 +74,92 @@ async def run_agent():
     daemon = WyattDaemon()
     agent_id = "agent-001"
 
-    print("=" * 80)
-    print("WYATT v0.1.0 - Policy Enforcement Demonstration")
-    print("=" * 80)
-    print()
+    async def run_scenario(
+        name: str,
+        tool_name: str,
+        tool_callable: Callable[..., str],
+        tool_args: dict[str, Any],
+    ) -> None:
+        input_payload = {
+            "agent": agent_id,
+            "tool": tool_name,
+            "args": tool_args,
+        }
 
-    # ========================================================================
-    # SCENARIO 1: Permitted Tool
-    # ========================================================================
-    print("SCENARIO 1: Agent attempts to use PERMITTED tool (read_file)")
-    print("-" * 80)
+        log_buffer = io.StringIO()
+        output_text = ""
 
-    try:
-        result = await daemon.execute_tool(
-            agent_id=agent_id,
-            tool_name="read_file",
-            tool_callable=read_file,
-            tool_args={"path": "/etc/hostname"},
-        )
-        print(f"✓ Tool executed successfully")
-        print(f"  Result: {result}")
-    except PolicyViolationError as e:
-        print(f"✗ Policy denied (unexpected!): {e}")
+        try:
+            with redirect_stdout(log_buffer):
+                result = await daemon.execute_tool(
+                    agent_id=agent_id,
+                    tool_name=tool_name,
+                    tool_callable=tool_callable,
+                    tool_args=tool_args,
+                )
+            output_text = f"tool executed successfully: {result}"
+        except PolicyViolationError as e:
+            output_text = f"execution blocked: {e.reason}"
 
-    print()
+        raw_log = ""
+        log_data: dict[str, Any] = {}
+        decode_error = False
+        for line in reversed(log_buffer.getvalue().splitlines()):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                parsed = json.loads(stripped)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict) and parsed.get("event") == "enforcement_decision":
+                raw_log = stripped
+                log_data = parsed
+                break
 
-    # ========================================================================
-    # SCENARIO 2: Forbidden Tool (in policy but not permitted for this agent)
-    # ========================================================================
-    print("SCENARIO 2: Agent attempts to use FORBIDDEN tool (delete_database)")
-    print("-" * 80)
+        if not raw_log:
+            for line in log_buffer.getvalue().splitlines():
+                stripped = line.strip()
+                if stripped:
+                    raw_log = stripped
+                    break
+        try:
+            if raw_log and not log_data:
+                log_data = json.loads(raw_log)
+        except json.JSONDecodeError:
+            decode_error = True
+            log_data = {}
+        decision = log_data.get("decision", "UNKNOWN")
+        reason = log_data.get("policy_basis", "No policy basis recorded")
+        if decode_error and raw_log:
+            reason = f"CEE log parse error: {raw_log}"
 
-    try:
-        result = await daemon.execute_tool(
-            agent_id=agent_id,
-            tool_name="delete_database",
-            tool_callable=delete_database,
-            tool_args={"name": "production"},
-        )
-        print(f"✗ Tool executed (SHOULD NEVER HAPPEN!): {result}")
-    except PolicyViolationError as e:
-        print(f"✓ Policy blocked execution")
-        print(f"  Reason: {e.reason}")
+        print(f"SCENARIO: {name}")
+        print(f"INPUT:    {json.dumps(input_payload)}")
+        print(f"DECISION: {decision}")
+        print(f"REASON:   {reason}")
+        print(f"OUTPUT:   {output_text}")
+        print(f"CEE LOG:  {raw_log}")
+        print()
 
-    print()
-
-    # ========================================================================
-    # SCENARIO 3: Unknown Tool (deny by default)
-    # ========================================================================
-    print("SCENARIO 3: Agent attempts to use UNKNOWN tool (hack_system)")
-    print("-" * 80)
-
-    try:
-        result = await daemon.execute_tool(
-            agent_id=agent_id,
-            tool_name="hack_system",
-            tool_callable=hack_system,
-            tool_args={"target": "mainframe"},
-        )
-        print(f"✗ Tool executed (SHOULD NEVER HAPPEN!): {result}")
-    except PolicyViolationError as e:
-        print(f"✓ Policy blocked execution (deny by default)")
-        print(f"  Reason: {e.reason}")
-
-    print()
-    print("=" * 80)
-    print("All scenarios completed. Check the JSON logs above for CEE records.")
-    print("=" * 80)
+    await run_scenario(
+        name="permitted tool: read_file",
+        tool_name="read_file",
+        tool_callable=read_file,
+        tool_args={"path": "/etc/hostname"},
+    )
+    await run_scenario(
+        name="forbidden tool: delete_database",
+        tool_name="delete_database",
+        tool_callable=delete_database,
+        tool_args={"name": "production"},
+    )
+    await run_scenario(
+        name="unknown tool: hack_system",
+        tool_name="hack_system",
+        tool_callable=hack_system,
+        tool_args={"target": "mainframe"},
+    )
 
 
 # ============================================================================
@@ -146,9 +169,6 @@ async def run_agent():
 
 def main():
     """Entry point."""
-    print("\nStarting agent...")
-    print("CEE logs will appear as JSON between scenarios\n")
-
     try:
         asyncio.run(run_agent())
     except KeyboardInterrupt:
