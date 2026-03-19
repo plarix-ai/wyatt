@@ -17,7 +17,7 @@ import structlog
 structlog.configure(
     processors=[
         structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.add_log_level,
+        # Note: add_log_level removed - always INFO, adds no information
         structlog.processors.JSONRenderer(),
     ],
     context_class=dict,
@@ -64,9 +64,8 @@ def log_enforcement(
 
     Example JSON output:
         {
-            "event": "enforcement_decision",
             "timestamp": "2026-03-19T12:00:00.000000Z",
-            "level": "info",
+            "event": "enforcement_decision",
             "operation": "read_file",
             "principal": "agent-001",
             "state_delta": {"path": "/etc/passwd"},
