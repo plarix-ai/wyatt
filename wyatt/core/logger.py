@@ -6,7 +6,7 @@ as structured JSON. No print statements. Clean audit trail.
 
 Connects to:
 - daemon.py: Calls log_enforcement() for every decision
-- models.py: Logs EnforcementLog objects
+- models.py: Uses same CEE field names for consistency
 """
 
 import sys
