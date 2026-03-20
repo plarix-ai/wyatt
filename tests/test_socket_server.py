@@ -49,7 +49,8 @@ async def send_request(
 ) -> dict:
     """Helper: send a JSON request and get response."""
     reader, writer = await asyncio.open_unix_connection(socket_path)
-    if register_first and request.get("action") == "execute":
+    action = request.get("action", "execute")
+    if register_first and action not in ("register", "disconnect"):
         register = json.dumps({
             "action": "register",
             "agent_id": request.get("agent_id", "unknown"),
@@ -92,6 +93,26 @@ async def test_agent_registration(server):
         resp = json.loads(data.decode("utf-8").strip())
         assert resp["status"] == "registered"
         assert resp["agent_id"] == "test-agent"
+
+        writer.close()
+        await writer.wait_closed()
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_non_object_json_returns_deny(server):
+    """Non-object JSON payloads should return a DENY response."""
+    await server.start()
+    try:
+        reader, writer = await asyncio.open_unix_connection(TEST_SOCKET)
+        writer.write(b"[\"not\", \"an\", \"object\"]\n")
+        await writer.drain()
+
+        data = await reader.readline()
+        resp = json.loads(data.decode("utf-8").strip())
+        assert resp["verdict"] == "deny"
+        assert "must be an object" in resp["reason"]
 
         writer.close()
         await writer.wait_closed()
@@ -178,6 +199,75 @@ async def test_registered_identity_mismatch_denied(server):
         resp = json.loads(data.decode("utf-8").strip())
         assert resp["verdict"] == "deny"
         assert "mismatch" in resp["reason"]
+
+        writer.close()
+        await writer.wait_closed()
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_reregister_same_identity_allowed(server):
+    """Re-registering with the same identity should be idempotent."""
+    await server.start()
+    try:
+        reader, writer = await asyncio.open_unix_connection(TEST_SOCKET)
+
+        register = json.dumps({"action": "register", "agent_id": "devops-agent"})
+        writer.write((register + "\n").encode("utf-8"))
+        await writer.drain()
+        first = json.loads((await reader.readline()).decode("utf-8").strip())
+        assert first["status"] == "registered"
+        assert first["agent_id"] == "devops-agent"
+
+        writer.write((register + "\n").encode("utf-8"))
+        await writer.drain()
+        second = json.loads((await reader.readline()).decode("utf-8").strip())
+        assert second["status"] == "registered"
+        assert second["agent_id"] == "devops-agent"
+
+        exec_request = json.dumps({
+            "action": "execute",
+            "agent_id": "devops-agent",
+            "tool": "read_file",
+            "args": {"path": "/tmp/test.log"},
+        })
+        writer.write((exec_request + "\n").encode("utf-8"))
+        await writer.drain()
+
+        exec_resp = json.loads((await reader.readline()).decode("utf-8").strip())
+        assert exec_resp["verdict"] == "allow"
+
+        writer.close()
+        await writer.wait_closed()
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_reregister_different_identity_denied(server):
+    """Re-registering with a different identity should be denied and closed."""
+    await server.start()
+    try:
+        reader, writer = await asyncio.open_unix_connection(TEST_SOCKET)
+
+        register_a = json.dumps({"action": "register", "agent_id": "devops-agent"})
+        writer.write((register_a + "\n").encode("utf-8"))
+        await writer.drain()
+        first = json.loads((await reader.readline()).decode("utf-8").strip())
+        assert first["status"] == "registered"
+        assert first["agent_id"] == "devops-agent"
+
+        register_b = json.dumps({"action": "register", "agent_id": "unknown-agent"})
+        writer.write((register_b + "\n").encode("utf-8"))
+        await writer.drain()
+        deny = json.loads((await reader.readline()).decode("utf-8").strip())
+        assert deny["verdict"] == "deny"
+        assert "Re-registration" in deny["reason"]
+
+        # server closes the connection after rejecting identity switch
+        closed = await reader.readline()
+        assert closed == b""
 
         writer.close()
         await writer.wait_closed()

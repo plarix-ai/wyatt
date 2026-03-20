@@ -116,12 +116,40 @@ class WyattSocketServer:
                     await writer.drain()
                     continue
 
+                if not isinstance(request_data, dict):
+                    error_resp = ToolResponse(
+                        verdict=Verdict.DENY,
+                        reason="Invalid request format: JSON message must be an object",
+                    )
+                    writer.write(
+                        (error_resp.model_dump_json() + "\n").encode("utf-8")
+                    )
+                    await writer.drain()
+                    continue
+
                 # Handle special actions
                 action = request_data.get("action", "execute")
 
                 if action == "register":
-                    registered_agent_id = request_data.get("agent_id", "unknown")
-                    log_connection(registered_agent_id, "connected")
+                    requested_agent_id = request_data.get("agent_id", "unknown")
+                    if (
+                        registered_agent_id is not None
+                        and requested_agent_id != registered_agent_id
+                    ):
+                        error_resp = ToolResponse(
+                            verdict=Verdict.DENY,
+                            reason="Re-registration with a different agent ID is not allowed",
+                        )
+                        writer.write(
+                            (error_resp.model_dump_json() + "\n").encode("utf-8")
+                        )
+                        await writer.drain()
+                        break
+
+                    if registered_agent_id is None:
+                        registered_agent_id = requested_agent_id
+                        log_connection(registered_agent_id, "connected")
+
                     resp = {"status": "registered", "agent_id": registered_agent_id}
                     writer.write(
                         (json.dumps(resp) + "\n").encode("utf-8")
