@@ -1,4 +1,4 @@
-# [Wyatt v0.2](https://plarix.dev)
+# [Wyatt v0.3.0-alpha](https://plarix.dev)
 
 **Runtime policy enforcement daemon for AI agentic systems.**
 
@@ -195,32 +195,27 @@ The production DevOps agent simulates what a real AI assistant does daily:
 
 ```
 wyatt/
-├── wyatt/
+├── src/wyatt/                    # Wyatt Python package
 │   ├── core/
-│   │   ├── daemon.py           # Tool execution entry point
-│   │   ├── enforcer.py         # OPA REST client
-│   │   ├── boundaries.py       # AFB04 boundary enforcement (TOOL, DATA, EXEC, CTX)
-│   │   ├── socket_server.py    # Unix domain socket server
-│   │   ├── logger.py           # Colored [TAG] logging
-│   │   ├── models.py           # CEE, Verdict, AFBDecision, ToolRequest/Response
-│   │   └── exceptions.py       # PolicyViolationError
+│   │   ├── daemon.py             # Tool execution entry point
+│   │   ├── enforcer.py           # OPA REST client
+│   │   ├── boundaries.py         # AFB04 boundary enforcement
+│   │   ├── socket_server.py      # Unix domain socket server
+│   │   ├── logger.py             # Colored [TAG] logging
+│   │   ├── models.py             # CEE, Verdict, AFBDecision
+│   │   └── exceptions.py         # PolicyViolationError
 │   └── policies/
-│       ├── base.rego            # OPA policy rules
-│       └── README.md            # Policy documentation
-├── tests/
-│   ├── test_boundaries.py      # 25 tests: all 4 AFB boundary checks
-│   ├── test_socket_server.py   # 11 tests: socket communication & enforcement
-│   ├── test_daemon.py          # 7 tests: daemon integration
-│   ├── test_enforcer.py        # 6 tests: OPA communication
-│   └── test_models_logger.py   # 3 tests: models & logging
-├── examples/
-│   ├── adversarial_agent.py    # Production DevOps agent (17 attack scenarios)
-│   └── simple_agent.py         # v0.1.0 simple demonstration
-├── run_wyatt.py                # Daemon entry point
-├── run_agent.py                # Agent entry point
-├── docker-compose.yml          # OPA sidecar
-├── Makefile                    # make start, daemon, agent, test
-└── README.md
+│       ├── base.rego             # Tool/agent allowlist policy
+│       └── sql_access.rego       # Data access control policy
+├── agents/                       # Test agents
+│   ├── adversarial_agent.py      # DevOps agent (17 attack scenarios)
+│   ├── cli_agent.py              # Interactive CLI agent
+│   └── sql_agent/                # NL-to-SQL chatbot with Wyatt
+├── tests/                        # Pytest tests
+├── run_wyatt.py                  # Daemon entry point
+├── run_agent.py                  # Agent entry point
+├── docker-compose.yml            # OPA sidecar
+└── Makefile
 ```
 
 ---
@@ -273,8 +268,8 @@ DataBoundaryRule(
 
 To add a new agent:
 
-1. Add to `permitted_tools` in `wyatt/policies/base.rego`
-2. Add tool allowlist in `create_default_config()` in `wyatt/core/boundaries.py`
+1. Add to `permitted_tools` in `src/wyatt/policies/base.rego`
+2. Add tool allowlist in `create_default_config()` in `src/wyatt/core/boundaries.py`
 3. Add data rules (optional) for argument restrictions
 4. Restart OPA: `make stop && make start`
 

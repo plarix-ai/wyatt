@@ -8,7 +8,7 @@ from typing import Optional
 
 import httpx
 
-from .database import get_schema
+from database import get_schema
 
 
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"

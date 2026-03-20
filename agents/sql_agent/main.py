@@ -2,9 +2,10 @@
 SQL Agent Chatbot - Natural Language to SQL with Wyatt Policy Enforcement.
 
 Usage:
-    python -m wyatt.agents.sql_agent.main
-    python -m wyatt.agents.sql_agent.main --user B
-    python -m wyatt.agents.sql_agent.main --no-wyatt
+    cd wyatt/agents/sql_agent
+    ./run.sh                    # Default (user A, Wyatt ON)
+    ./run.sh --user B           # Start as user B
+    ./run.sh --no-wyatt         # Disable Wyatt (vulnerable mode)
 
 Commands:
     /wyatt on   - Enable Wyatt (OPA policy enforcement)
@@ -17,10 +18,14 @@ Commands:
 
 import argparse
 import sys
+from pathlib import Path
 
-from .database import init_database, execute_query, DB_PATH
-from .llm import generate_sql, validate_sql
-from .enforcer import WyattEnforcer
+# Allow imports from this directory
+sys.path.insert(0, str(Path(__file__).parent))
+
+from database import init_database, execute_query, DB_PATH
+from llm import generate_sql, validate_sql
+from enforcer import WyattEnforcer
 
 
 def format_results(results: list[dict]) -> str:
