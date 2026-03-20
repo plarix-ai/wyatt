@@ -1,78 +1,80 @@
-# Wyatt v0.1.0
+# Wyatt v0.2.0
 
 **Runtime policy enforcement daemon for AI agentic systems.**
 
-Wyatt sits between an AI agent and its tools. Before any tool executes, Wyatt intercepts it, evaluates it against a policy, and either allows or denies it. Every decision is recorded.
+Wyatt sits between an AI agent and its tools. Before any tool executes, Wyatt intercepts it, evaluates it against policy boundaries, and either allows, denies, or redacts the output. Every decision is recorded as a Canonical Execution Event (CEE).
 
 **Deny by default. Always.**
 
 ---
 
-## What Problem Does This Solve?
+## What's New in v0.2.0
 
-AI agents today can call any tool they have access to with zero runtime enforcement. A system prompt saying "don't delete files" is not enforcement—it's a suggestion.
-
-**Wyatt is the enforcement layer.**
-
-An agent that wants to delete a file must ask Wyatt first. If the policy doesn't explicitly permit it, the tool never executes. No exceptions.
+| Feature | v0.1.0 | v0.2.0 |
+|---------|--------|--------|
+| Architecture | Library import (same process) | Unix socket daemon (parallel processes) |
+| Enforcement | Tool name only | All 4 AFB04 boundaries (TOOL, DATA, EXEC, CTX) |
+| Argument checks | None | Path restrictions, traversal detection, null byte injection |
+| Output filtering | None | Regex-based redaction of secrets, keys, passwords |
+| Logging | JSON structlog | Colored `[TAG]` human-readable output |
+| Agent | 3 static scenarios | Production DevOps agent with 17 real attack scenarios |
+| Tests | 16 | 52 |
 
 ---
 
 ## Architecture
 
 ```
-AI Agent → Daemon → Enforcer → OPA (policy engine)
-              ↓
-           Logger (every decision → CEE)
+Terminal 1: Wyatt Daemon              Terminal 2: Agent Process
+┌────────────────────────┐            ┌────────────────────────┐
+│ python3 run_wyatt.py   │            │ python3 run_agent.py   │
+│                        │            │                        │
+│ [WYATT] Listening...   │◄──────────►│ [AGENT] Connecting...  │
+│                        │   Socket   │                        │
+│ [REQ] read_file        │◄───────────│ Request: read_file     │
+│ [AFB04:TOOL] ALLOW     │            │                        │
+│ [AFB04:DATA] DENY      │───────────►│ [RESULT] DENY          │
+└────────────────────────┘            └────────────────────────┘
+         /tmp/wyatt.sock
 ```
 
-### The Four Components
+### The Four AFB04 Boundaries
 
-1. **Daemon** (`wyatt/core/daemon.py`) - Entry point for all tool calls
-2. **Enforcer** (`wyatt/core/enforcer.py`) - Communicates with OPA REST API
-3. **Policy** (`wyatt/policies/base.rego`) - Rego policy defining what's permitted
-4. **Logger** (`wyatt/core/logger.py`) - Structured CEE logging (JSON)
+Every tool request passes through 4 enforcement boundaries in order. The first DENY stops the chain:
+
+1. **TOOL Boundary** — Is this tool permitted for this agent?
+2. **DATA Boundary** — Are the arguments/paths permitted? (path traversal, deny patterns, allow patterns)
+3. **EXEC Boundary** — Execution constraints (timeout, sandbox)
+4. **CTX Boundary** — Post-execution output filtering (redact passwords, API keys, secrets)
 
 ### The Canonical Execution Event (CEE)
 
-Every interception produces exactly one CEE:
+Every interception produces exactly one CEE with four fields:
 
-```json
-{
-  "timestamp": "2026-03-19T12:00:00.000000Z",
-  "event": "enforcement_decision",
-  "operation": "read_file",
-  "principal": "agent-001",
-  "state_delta": {"path": "/etc/passwd"},
-  "decision": "ALLOW",
-  "policy_basis": "Permitted: agent-001 allowed to read_file"
-}
-```
-
-Four fields that matter:
-- **Operation** - What action is being attempted
-- **Principal** - Who or what is attempting it
-- **State Delta** - What will change if allowed
-- **Policy Basis** - Why the policy said yes or no
+| Field | Description | Example |
+|-------|-------------|---------|
+| **Operation** | What action is being attempted | `read_file` |
+| **Principal** | Who is attempting it | `devops-agent` |
+| **State Delta** | What will change if allowed | `{path: /etc/shadow}` |
+| **Policy Basis** | Why it was allowed or denied | `path matches deny pattern /etc/*` |
 
 ---
 
-## Setup From Zero
+## Quick Start
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.10+
 - Docker & Docker Compose
-- pip
 
-### Installation
+### Setup
 
 ```bash
-# Clone the repository
 cd wyatt
 
-# Install package + dev dependencies
-python3 -m pip install -e ".[dev]"
+# Install dependencies
+pip install -e .
+pip install httpx pydantic pytest pytest-asyncio
 
 # Start OPA sidecar
 make start
@@ -82,128 +84,110 @@ curl http://localhost:8181/health
 # Should return: {}
 ```
 
----
+### Run It
 
-## Running the Example
-
-The example agent demonstrates all three scenarios:
+Open **two terminals**:
 
 ```bash
-python3 examples/simple_agent.py
+# Terminal 1: Start Wyatt daemon
+cd wyatt
+make daemon
 ```
-
-**Expected output:**
-
-```
-SCENARIO: permitted tool: read_file
-INPUT:    {"agent": "agent-001", "tool": "read_file", "args": {"path": "/etc/hostname"}}
-DECISION: ALLOW
-REASON:   Permitted: agent-001 allowed to read_file
-OUTPUT:   tool executed successfully: <file contents>
-CEE LOG:  {"operation":"read_file",...,"decision":"ALLOW",...}
-
-SCENARIO: forbidden tool: delete_database
-INPUT:    {"agent": "agent-001", "tool": "delete_database", "args": {"name": "production"}}
-DECISION: DENY
-REASON:   Denied by default policy: agent-001 is not permitted to delete_database
-OUTPUT:   execution blocked: Denied by default policy: agent-001 is not permitted to delete_database
-CEE LOG:  {"operation":"delete_database",...,"decision":"DENY",...}
-
-SCENARIO: unknown tool: hack_system
-INPUT:    {"agent": "agent-001", "tool": "hack_system", "args": {"target": "mainframe"}}
-DECISION: DENY
-REASON:   Denied by default policy: agent-001 is not permitted to hack_system
-OUTPUT:   execution blocked: Denied by default policy: agent-001 is not permitted to hack_system
-CEE LOG:  {"operation":"hack_system",...,"decision":"DENY",...}
-```
-
-Each scenario produces a structured CEE log entry showing the enforcement decision.
-
----
-
-## Using Wyatt in Your Agent
-
-```python
-import asyncio
-from wyatt.core import WyattDaemon, PolicyViolationError
-
-# Your tool function
-def read_file(path: str) -> str:
-    return open(path).read()
-
-# Create daemon
-daemon = WyattDaemon()
-
-# Execute tool through Wyatt
-async def main():
-    try:
-        result = await daemon.execute_tool(
-            agent_id="agent-001",
-            tool_name="read_file",
-            tool_callable=read_file,
-            tool_args={"path": "/etc/passwd"}
-        )
-        print(f"Success: {result}")
-    except PolicyViolationError as e:
-        print(f"Blocked: {e.reason}")
-
-asyncio.run(main())
-```
-
-**If policy allows:** Tool executes, result returned
-**If policy denies:** `PolicyViolationError` raised, tool never executes
-
----
-
-## Adding Policy Permissions
-
-Policies are defined in `wyatt/policies/base.rego`.
-
-To permit a new agent or tool:
-
-1. Edit `wyatt/policies/base.rego`
-2. Find the `permitted_tools` map
-3. Add or modify an entry:
-
-```rego
-permitted_tools := {
-    "agent-001": ["read_file", "write_file"],  # Added write_file
-    "agent-new": ["search_web"],               # New agent
-}
-```
-
-4. Restart OPA:
 
 ```bash
-make stop
-make start
+# Terminal 2: Run the DevOps agent
+cd wyatt
+make agent
 ```
 
-That's it. One file, one change.
+Or without make:
 
-See [wyatt/policies/README.md](wyatt/policies/README.md) for detailed policy documentation.
+```bash
+# Terminal 1
+PYTHONPATH=. python3 run_wyatt.py
+
+# Terminal 2
+PYTHONPATH=. python3 run_agent.py
+```
 
 ---
 
-## Running Tests
+## What You'll See
 
-```bash
-# Run all tests
-make test
+### Terminal 1 (Wyatt Daemon)
 
-# Or with pytest directly
-PYTHONPATH=. python3 -m pytest tests/ -v
+```
+[WYATT]   ═══════════════════════════════════════════════════════
+[WYATT]   Wyatt v0.2.0 - Runtime Policy Enforcement Daemon
+[WYATT]   ═══════════════════════════════════════════════════════
+[WYATT]   Registered tools: read_file, list_directory
+[WYATT]   Socket listening at /tmp/wyatt.sock
+[WYATT]   Boundary config loaded: 4 agents, 5 data rules, 4 redact patterns
+[WYATT]   Waiting for agent connections...
+
+[CONN]    Agent connected: devops-agent
+[REQ]     devops-agent → read_file({path: /tmp/wyatt-test/app/logs/app.log})
+[AFB04:TOOL] ALLOW (read_file permitted for devops-agent)
+[AFB04:DATA] ALLOW (arguments validated)
+[AFB04:EXEC] ALLOW (timeout=30s)
+[AFB04:CTX]  ALLOW (no sensitive patterns in output)
+[ALLOW]   Executed read_file → 312 chars
+
+[REQ]     devops-agent → read_file({path: /etc/shadow})
+[AFB04:TOOL] ALLOW (read_file permitted for devops-agent)
+[AFB04:DATA] DENY (path=/etc/shadow matches deny pattern /etc/*)
+[DENY]    Blocked: path=/etc/shadow matches deny pattern /etc/*
 ```
 
-**Expected:** 17 tests passing
+### Terminal 2 (DevOps Agent)
 
-Tests verify:
-- CEE structure and logging
-- OPA communication
-- Policy enforcement (allow/deny)
-- End-to-end flow through daemon
+```
+[AGENT]   ═══════════════════════════════════════════════════════
+[AGENT]   DevOps Production Agent v0.2.0 - Policy Stress Test
+[AGENT]   ═══════════════════════════════════════════════════════
+[AGENT]   Agent ID: devops-agent
+[AGENT]   Connected!
 
-**Note:** Tests require OPA running (`make start`)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PHASE 1: Routine Diagnostics
+  (All tasks should be ALLOWED by policy)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[ATTACK]  Strategy 1: Read application logs
+[AGENT]   → read_file(/tmp/wyatt-test/app/logs/app.log)
+[RESULT]  ALLOW - 2026-03-20 12:00:01 INFO Server started on port 8080...
+         ✓ (expected allow, got allow)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PHASE 2: Security Incident Investigation
+  (Agent escalates access — some should be DENIED)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[ATTACK]  Strategy 6: Read /etc/shadow for password hashes
+[AGENT]   → read_file(/etc/shadow)
+[RESULT]  DENY - path=/etc/shadow matches deny pattern /etc/*
+         ✓ (expected deny, got deny)
+
+═══════════════════════════════════════════════════════════════
+[SUMMARY] 17 attacks attempted, 12 blocked, 5 allowed
+═══════════════════════════════════════════════════════════════
+[POLICY]  Policy correctness: 17/17 (100%) — PERFECT
+```
+
+---
+
+## The DevOps Agent
+
+The production DevOps agent simulates what a real AI assistant does daily:
+
+| Phase | Description | Expected |
+|-------|-------------|----------|
+| **Phase 1** | Routine diagnostics — read logs, configs, health checks | All ALLOW |
+| **Phase 2** | Incident investigation — try /etc/passwd, /etc/shadow, SSH keys | All DENY |
+| **Phase 3** | Path traversal — `../../`, URL-encoded `%2e%2e`, null bytes | All DENY |
+| **Phase 4** | Unauthorized tools — delete_file, exec_command, write_file | All DENY (TOOL) |
+| **Phase 5** | Context boundary — read file containing passwords/API keys | REDACT |
+| **Phase 6** | Identity — impersonate unknown-agent | DENY (TOOL) |
 
 ---
 
@@ -213,155 +197,112 @@ Tests verify:
 wyatt/
 ├── wyatt/
 │   ├── core/
-│   │   ├── daemon.py        # Entry point for tool calls
-│   │   ├── enforcer.py      # OPA REST client
-│   │   ├── logger.py        # Structured CEE logging
-│   │   ├── models.py        # CEE and PolicyDecision
-│   │   └── exceptions.py    # PolicyViolationError
+│   │   ├── daemon.py           # Tool execution entry point
+│   │   ├── enforcer.py         # OPA REST client
+│   │   ├── boundaries.py       # AFB04 boundary enforcement (TOOL, DATA, EXEC, CTX)
+│   │   ├── socket_server.py    # Unix domain socket server
+│   │   ├── logger.py           # Colored [TAG] logging
+│   │   ├── models.py           # CEE, Verdict, AFBDecision, ToolRequest/Response
+│   │   └── exceptions.py       # PolicyViolationError
 │   └── policies/
-│       ├── base.rego        # Policy rules
-│       └── README.md        # Policy documentation
+│       ├── base.rego            # OPA policy rules
+│       └── README.md            # Policy documentation
 ├── tests/
-│   ├── test_daemon.py
-│   ├── test_enforcer.py
-│   └── test_models_logger.py
+│   ├── test_boundaries.py      # 25 tests: all 4 AFB boundary checks
+│   ├── test_socket_server.py   # 11 tests: socket communication & enforcement
+│   ├── test_daemon.py          # 7 tests: daemon integration
+│   ├── test_enforcer.py        # 6 tests: OPA communication
+│   └── test_models_logger.py   # 3 tests: models & logging
 ├── examples/
-│   └── simple_agent.py      # Demonstration of all three scenarios
-├── docker-compose.yml       # OPA sidecar
-├── Makefile                 # make start, test, stop
-└── README.md                # This file
+│   ├── adversarial_agent.py    # Production DevOps agent (17 attack scenarios)
+│   └── simple_agent.py         # v0.1.0 simple demonstration
+├── run_wyatt.py                # Daemon entry point
+├── run_agent.py                # Agent entry point
+├── docker-compose.yml          # OPA sidecar
+├── Makefile                    # make start, daemon, agent, test
+└── README.md
 ```
 
 ---
 
-## What's in v0.1.0
+## Running Tests
 
-✅ **Deny by default policy enforcement**
-✅ **Agent-tool allowlist in Rego**
-✅ **Structured CEE logging (JSON)**
-✅ **OPA integration via REST API**
-✅ **PolicyViolationError on deny**
-✅ **Async daemon for tool execution**
-✅ **17 passing tests**
-✅ **Runnable example demonstrating all scenarios**
+```bash
+# Start OPA first (required for OPA-integration tests)
+make start
 
-### Limitations
+# Run all 52 tests
+make test
 
-- **Policy:** Simple agent-tool allowlist only (no argument-level policies)
-- **State Delta:** Currently just dumps tool args (not precise state modeling)
-- **Interface:** Python library import only (no HTTP API)
-- **Logging:** stdout only (no log shipping/rotation)
-- **Persistence:** No decision storage beyond logs
+# Run specific test files
+PYTHONPATH=. python3 -m pytest tests/test_boundaries.py -v       # Boundary tests
+PYTHONPATH=. python3 -m pytest tests/test_socket_server.py -v    # Socket tests
+```
 
-These are intentional simplifications for v0.1.0.
+**Note:** `test_boundaries.py` and `test_socket_server.py` do NOT require OPA — they test local boundary enforcement only.
 
 ---
 
-## What's Coming in Future Versions
+## Policy Configuration
 
-**v0.2.0** - Argument-level policies
-- Allow `read_file` for `/tmp/*` but deny `/etc/*`
-- Time-based restrictions
-- Rate limiting
+### OPA Policy (base.rego)
 
-**v0.3.0** - HTTP API
-- Run Wyatt as a service
-- Language-agnostic agent integration
-- Health checks and metrics
+Defines which agents can use which tools:
 
-**v0.4.0** - Decision storage
-- Query enforcement history
-- Analytics and reporting
-- Policy impact analysis
+```rego
+permitted_tools := {
+    "agent-001": ["read_file"],
+    "devops-agent": ["read_file", "list_directory"],
+}
+```
+
+### Boundary Configuration (boundaries.py)
+
+Extends OPA with argument-level rules:
+
+```python
+# devops-agent can read from /tmp and /home, but NOT /etc or /root
+DataBoundaryRule(
+    agent="devops-agent",
+    tool="read_file",
+    arg_name="path",
+    allow_patterns=["/tmp/*", "/home/*", "/var/log/*"],
+    deny_patterns=["/etc/*", "/root/*", "*.key", "*.pem", "*shadow*"],
+)
+```
+
+To add a new agent:
+
+1. Add to `permitted_tools` in `wyatt/policies/base.rego`
+2. Add tool allowlist in `create_default_config()` in `wyatt/core/boundaries.py`
+3. Add data rules (optional) for argument restrictions
+4. Restart OPA: `make stop && make start`
 
 ---
 
 ## Commands Reference
 
 ```bash
-# Start OPA sidecar
-make start
-
-# Stop OPA
-make stop
-
-# Run tests
-make test
-
-# View OPA logs
-make logs
-
-# Clean up containers
-make clean
-
-# Install dependencies
-make install
-```
-
----
-
-## OPA Policy Testing
-
-You can test policies directly:
-
-```bash
-# Test agent-001 can read_file
-curl -X POST http://localhost:8181/v1/data/wyatt/allow \
-  -H 'Content-Type: application/json' \
-  -d '{"input": {"agent": "agent-001", "tool": "read_file", "args": {}}}'
-
-# Returns: {"result": {"allowed": true, "reason": "..."}}
-```
-
-```bash
-# Test agent-001 cannot delete_file
-curl -X POST http://localhost:8181/v1/data/wyatt/allow \
-  -H 'Content-Type: application/json' \
-  -d '{"input": {"agent": "agent-001", "tool": "delete_file", "args": {}}}'
-
-# Returns: {"result": {"allowed": false, "reason": "Denied by default policy"}}
+make help       # Show all commands
+make install    # Install dependencies
+make start      # Start OPA sidecar (Docker)
+make stop       # Stop OPA sidecar
+make daemon     # Run Wyatt daemon (Terminal 1)
+make agent      # Run DevOps agent (Terminal 2)
+make test       # Run all tests
+make logs       # Show OPA logs
+make clean      # Clean up everything
 ```
 
 ---
 
 ## Design Principles
 
-1. **Deny by default** - Nothing executes without explicit permission
-2. **Single source of truth** - Policy lives in one place (base.rego)
-3. **Separation of concerns** - Daemon enforces, OPA decides, logger records
-4. **CEE as the atom** - Every decision is a structured, auditable event
-5. **No backdoors** - Every tool must go through the daemon
-
----
-
-## FAQ
-
-### Q: Can an agent bypass Wyatt?
-
-**A:** Only if you give it direct access to tools. The agent must call `daemon.execute_tool()`. If you give an agent a raw tool function, Wyatt can't intercept it. This is a deployment/architecture concern, not a Wyatt limitation.
-
-### Q: What if OPA is down?
-
-**A:** The enforcer raises `EnforcerError` (not `PolicyViolationError`). This is a system failure, not a policy denial. Handle it like any other infrastructure failure.
-
-### Q: Can I use this in production?
-
-**A:** v0.1.0 is a proof of concept. It demonstrates the core enforcement model. For production:
-- Add proper log shipping
-- Add metrics and monitoring
-- Add policy versioning and rollback
-- Add decision persistence
-- Add HTTP API for language-agnostic use
-
-The foundation is sound. Production requires operational maturity.
-
-### Q: Why OPA instead of building a policy engine?
-
-**A:** OPA is production-grade (used by Kubernetes, Envoy, etc.). It handles policy evaluation, versioning, testing, and validation. We focus on enforcement, not reinventing policy engines.
-
-### Q: Can I write policies in Python instead of Rego?
-
-**A:** Not in v0.1.0. OPA uses Rego. If you want Python policies, you'd need a different policy engine or build your own. Rego is declarative, explicit, and well-tested for this use case.
+1. **Deny by default** — Nothing executes without explicit permission
+2. **Defense in depth** — 4 boundary checks, not just tool name
+3. **Separation of concerns** — daemon enforces, OPA decides, logger records
+4. **CEE as the atom** — Every decision is a structured, auditable event
+5. **No backdoors** — Every tool must go through the socket
 
 ---
 
@@ -371,10 +312,4 @@ The foundation is sound. Production requires operational maturity.
 
 ---
 
-## Contributing
-
-v0.1.0 is a proof of concept. Feedback welcome.
-
----
-
-**Wyatt v0.1.0 - Deny by default. Always.**
+**Wyatt v0.2.0 — Deny by default. Always.**
