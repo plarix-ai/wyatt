@@ -26,12 +26,9 @@ class Color(Enum):
     DIM = "\033[2m"
 
     # Tag colors
-    CYAN = "\033[36m"  # [WYATT]
-    BLUE = "\033[34m"  # [REQ]
-    YELLOW = "\033[33m"  # [AFB04]
-    GREEN = "\033[32m"  # [ALLOW]
-    RED = "\033[31m"  # [DENY]
-    MAGENTA = "\033[35m"  # [AGENT]
+    BLUE = "\033[34m"   # Info tags
+    GREEN = "\033[32m"  # Success/Allow
+    RED = "\033[31m"    # Deny/Error
     WHITE = "\033[37m"  # Default text
 
 
@@ -83,30 +80,30 @@ def _format_args(args: dict[str, Any] | None) -> str:
 
 def log_wyatt(message: str) -> None:
     """Log a Wyatt system message."""
-    print(f"{_tag('WYATT', Color.CYAN)} {message}")
+    print(f"{_tag('WYATT', Color.BLUE)} {message}")
 
 
 def log_wyatt_banner(version: str = "0.2.0") -> None:
     """Print the Wyatt startup banner."""
     line = "═" * 55
-    print(f"{_tag('WYATT', Color.CYAN)} {_color(line, Color.CYAN)}")
+    print(f"{_tag('WYATT', Color.BLUE)} {_color(line, Color.BLUE)}")
     print(
-        f"{_tag('WYATT', Color.CYAN)} "
-        f"{_color(f'Wyatt v{version} - Runtime Policy Enforcement Daemon', Color.CYAN, bold=True)}"
+        f"{_tag('WYATT', Color.BLUE)} "
+        f"{_color(f'Wyatt v{version} - Runtime Policy Enforcement Daemon', Color.BLUE, bold=True)}"
     )
-    print(f"{_tag('WYATT', Color.CYAN)} {_color(line, Color.CYAN)}")
+    print(f"{_tag('WYATT', Color.BLUE)} {_color(line, Color.BLUE)}")
 
 
 def log_connection(agent_id: str, action: str = "connected") -> None:
     """Log agent connection/disconnection."""
-    print(f"{_tag('CONN', Color.BLUE)} Agent {action}: {_color(agent_id, Color.MAGENTA, bold=True)}")
+    print(f"{_tag('CONN', Color.BLUE)} Agent {action}: {_color(agent_id, Color.WHITE, bold=True)}")
 
 
 def log_request(agent_id: str, tool: str, args: dict[str, Any] | None = None) -> None:
     """Log an incoming tool request."""
     arrow = _color("→", Color.WHITE)
-    agent = _color(agent_id, Color.MAGENTA)
-    tool_name = _color(tool, Color.YELLOW, bold=True)
+    agent = _color(agent_id, Color.WHITE, bold=True)
+    tool_name = _color(tool, Color.WHITE, bold=True)
     formatted_args = _color(_format_args(args), Color.WHITE)
     print(f"{_tag('REQ', Color.BLUE)} {agent} {arrow} {tool_name}{formatted_args}")
 
@@ -123,7 +120,7 @@ def log_afb(afb_type: str, verdict: str, reason: str) -> None:
     tag = f"AFB04:{afb_type}"
     verdict_color = Color.GREEN if verdict == "ALLOW" else Color.RED
     verdict_text = _color(verdict, verdict_color, bold=True)
-    print(f"{_tag(tag, Color.YELLOW)} {verdict_text} ({reason})")
+    print(f"{_tag(tag, Color.BLUE)} {verdict_text} ({reason})")
 
 
 def log_allow(message: str) -> None:
@@ -138,31 +135,31 @@ def log_deny(message: str) -> None:
 
 def log_agent(message: str) -> None:
     """Log an agent-side message."""
-    print(f"{_tag('AGENT', Color.MAGENTA)} {message}")
+    print(f"{_tag('AGENT', Color.BLUE)} {message}")
 
 
 def log_agent_banner(name: str = "Adversarial Agent", version: str = "0.2.0") -> None:
     """Print the agent startup banner."""
     line = "═" * 55
-    print(f"{_tag('AGENT', Color.MAGENTA)} {_color(line, Color.MAGENTA)}")
+    print(f"{_tag('AGENT', Color.BLUE)} {_color(line, Color.BLUE)}")
     print(
-        f"{_tag('AGENT', Color.MAGENTA)} "
-        f"{_color(f'{name} v{version} - Policy Stress Test', Color.MAGENTA, bold=True)}"
+        f"{_tag('AGENT', Color.BLUE)} "
+        f"{_color(f'{name} v{version} - Policy Stress Test', Color.BLUE, bold=True)}"
     )
-    print(f"{_tag('AGENT', Color.MAGENTA)} {_color(line, Color.MAGENTA)}")
+    print(f"{_tag('AGENT', Color.BLUE)} {_color(line, Color.BLUE)}")
 
 
 def log_attack(strategy_num: int, description: str) -> None:
     """Log an attack strategy being executed."""
-    header = _color(f"Strategy {strategy_num}:", Color.YELLOW, bold=True)
-    print(f"{_tag('ATTACK', Color.RED)} {header} {description}")
+    header = _color(f"Task {strategy_num}:", Color.WHITE, bold=True)
+    print(f"\n{_tag('TASK', Color.BLUE)} {header} {description}")
 
 
 def log_result(verdict: str, message: str) -> None:
     """Log an attack result."""
     verdict_color = Color.GREEN if verdict == "ALLOW" else Color.RED
     verdict_text = _color(verdict, verdict_color, bold=True)
-    print(f"{_tag('RESULT', Color.WHITE)} {verdict_text} - {message}")
+    print(f"{_tag('RESULT', Color.BLUE)} {verdict_text} - {message}")
 
 
 def log_summary(total: int, blocked: int, allowed: int) -> None:
@@ -170,11 +167,11 @@ def log_summary(total: int, blocked: int, allowed: int) -> None:
     line = "═" * 55
     print(f"\n{_color(line, Color.WHITE)}")
     summary = (
-        f"{_color(str(total), Color.YELLOW, bold=True)} attacks attempted, "
-        f"{_color(str(blocked), Color.GREEN, bold=True)} blocked, "
-        f"{_color(str(allowed), Color.RED, bold=True)} allowed"
+        f"{_color(str(total), Color.WHITE, bold=True)} actions attempted, "
+        f"{_color(str(blocked), Color.RED, bold=True)} blocked, "
+        f"{_color(str(allowed), Color.GREEN, bold=True)} allowed"
     )
-    print(f"{_tag('SUMMARY', Color.CYAN)} {summary}")
+    print(f"{_tag('SUMMARY', Color.BLUE)} {summary}")
     print(f"{_color(line, Color.WHITE)}\n")
 
 
