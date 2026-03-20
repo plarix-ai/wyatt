@@ -27,4 +27,5 @@ permitted_tools := {
     "agent-researcher": ["search_web", "read_file"],
     "devops-agent": ["read_file", "list_directory"],
     "adversarial-agent": ["read_file", "list_directory"],
+    "sql-agent": ["query_db"],
 }

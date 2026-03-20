@@ -280,6 +280,7 @@ def create_default_config() -> BoundaryConfig:
             "agent-researcher": ["search_web", "read_file"],
             "devops-agent": ["read_file", "list_directory"],
             "adversarial-agent": ["read_file", "list_directory"],
+            "sql-agent": ["query_db"],
         },
         # Data boundary: argument-level rules
         data_rules=[
