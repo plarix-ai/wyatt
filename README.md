@@ -1,4 +1,4 @@
-# Wyatt v0.2
+# [Wyatt v0.2](https://plarix.dev)
 
 **Runtime policy enforcement daemon for AI agentic systems.**
 
