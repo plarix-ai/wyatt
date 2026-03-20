@@ -120,10 +120,9 @@ class WyattSocketServer:
                 action = request_data.get("action", "execute")
 
                 if action == "register":
-                    agent_id = request_data.get("agent_id", "unknown")
-                    registered_agent_id = agent_id
-                    log_connection(agent_id, "connected")
-                    resp = {"status": "registered", "agent_id": agent_id}
+                    registered_agent_id = request_data.get("agent_id", "unknown")
+                    log_connection(registered_agent_id, "connected")
+                    resp = {"status": "registered", "agent_id": registered_agent_id}
                     writer.write(
                         (json.dumps(resp) + "\n").encode("utf-8")
                     )
@@ -163,7 +162,7 @@ class WyattSocketServer:
                 if request.agent_id != registered_agent_id:
                     error_resp = ToolResponse(
                         verdict=Verdict.DENY,
-                        reason="agent_id mismatch with registered identity",
+                        reason="Agent ID mismatch with registered identity",
                     )
                     writer.write(
                         (error_resp.model_dump_json() + "\n").encode("utf-8")
