@@ -7,8 +7,8 @@ Requires OPA running: make start
 
 import pytest
 
-from wyatt.core.daemon import WyattDaemon
-from wyatt.core.exceptions import PolicyViolationError
+from core.daemon import WyattDaemon
+from core.exceptions import PolicyViolationError
 
 
 # Mock tool functions for testing

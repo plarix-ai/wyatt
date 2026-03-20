@@ -24,9 +24,9 @@ from pathlib import Path
 # Ensure wyatt package is importable via the src layout
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from wyatt.core.boundaries import BoundaryEnforcer, create_default_config
-from wyatt.core.logger import log_error, log_wyatt
-from wyatt.core.socket_server import WyattSocketServer
+from core.boundaries import BoundaryEnforcer, create_default_config
+from core.logger import log_error, log_wyatt
+from core.socket_server import WyattSocketServer
 
 
 # =============================================================================

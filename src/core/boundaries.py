@@ -14,8 +14,8 @@ import fnmatch
 import re
 from pathlib import Path
 
-from wyatt.core.logger import log_afb
-from wyatt.core.models import AFBDecision, AFBType, BoundaryConfig, DataBoundaryRule, Verdict
+from core.logger import log_afb
+from core.models import AFBDecision, AFBType, BoundaryConfig, DataBoundaryRule, Verdict
 
 
 class BoundaryEnforcer:

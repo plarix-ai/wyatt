@@ -17,8 +17,8 @@ from typing import Any
 
 import httpx
 
-from wyatt.core.exceptions import EnforcerError
-from wyatt.core.models import PolicyDecision
+from core.exceptions import EnforcerError
+from core.models import PolicyDecision
 
 
 class PolicyEnforcer:

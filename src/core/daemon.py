@@ -19,10 +19,10 @@ Connects to:
 from collections.abc import Callable
 from typing import Any, TypeVar
 
-from wyatt.core.enforcer import PolicyEnforcer
-from wyatt.core.exceptions import PolicyViolationError
-from wyatt.core.logger import log_enforcement
-from wyatt.core.models import CanonicalExecutionEvent
+from core.enforcer import PolicyEnforcer
+from core.exceptions import PolicyViolationError
+from core.logger import log_enforcement
+from core.models import CanonicalExecutionEvent
 
 # Type variable for tool return types
 T = TypeVar("T")

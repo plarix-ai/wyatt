@@ -27,8 +27,8 @@ import signal
 from collections.abc import Callable
 from typing import Any
 
-from wyatt.core.boundaries import BoundaryEnforcer
-from wyatt.core.logger import (
+from core.boundaries import BoundaryEnforcer
+from core.logger import (
     log_afb,
     log_allow,
     log_connection,
@@ -38,7 +38,7 @@ from wyatt.core.logger import (
     log_wyatt,
     log_wyatt_banner,
 )
-from wyatt.core.models import (
+from core.models import (
     AFBDecision,
     AFBType,
     BoundaryConfig,

@@ -20,8 +20,8 @@ from pathlib import Path
 # Ensure wyatt package is importable via the src layout
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from wyatt.core.logger import log_agent, log_result, log_error
-from wyatt.core.models import ToolRequest, ToolResponse
+from core.logger import log_agent, log_result, log_error
+from core.models import ToolRequest, ToolResponse
 
 
 async def run_cli_agent(agent_id: str, tool: str, args_dict: dict, socket_path: str) -> None:

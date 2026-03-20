@@ -6,8 +6,8 @@ These tests require OPA to be running: make start
 
 import pytest
 
-from wyatt.core.enforcer import PolicyEnforcer
-from wyatt.core.exceptions import EnforcerError
+from core.enforcer import PolicyEnforcer
+from core.exceptions import EnforcerError
 
 
 @pytest.mark.asyncio

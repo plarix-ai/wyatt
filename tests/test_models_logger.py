@@ -4,7 +4,7 @@ Tests for models and logger.
 Verifies CEE structure and human-readable logging output.
 """
 
-from wyatt.core.models import CanonicalExecutionEvent, PolicyDecision
+from core.models import CanonicalExecutionEvent, PolicyDecision
 
 
 def test_cee_creation():
@@ -35,7 +35,7 @@ def test_policy_decision_creation():
 
 def test_logger_output_structure(capsys):
     """Logger produces human-readable output with key fields."""
-    from wyatt.core.logger import log_enforcement
+    from core.logger import log_enforcement
 
     log_enforcement(
         operation="read_file",

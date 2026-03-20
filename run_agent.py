@@ -23,7 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from agents.adversarial_agent import DevOpsAgent
-from wyatt.core.logger import log_error
+from core.logger import log_error
 
 
 async def run_agent(agent_id: str, socket_path: str) -> None:

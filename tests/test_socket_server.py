@@ -11,8 +11,8 @@ import os
 
 import pytest
 
-from wyatt.core.boundaries import create_default_config
-from wyatt.core.socket_server import WyattSocketServer
+from core.boundaries import create_default_config
+from core.socket_server import WyattSocketServer
 
 # Test socket path (avoid conflicts with real daemon)
 TEST_SOCKET = "/tmp/wyatt-test.sock"

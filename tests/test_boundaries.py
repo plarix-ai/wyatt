@@ -10,8 +10,8 @@ Tests the BoundaryEnforcer with all 4 AFB04 sub-boundaries:
 
 import pytest
 
-from wyatt.core.boundaries import BoundaryEnforcer, create_default_config
-from wyatt.core.models import (
+from core.boundaries import BoundaryEnforcer, create_default_config
+from core.models import (
     AFBType,
     BoundaryConfig,
     DataBoundaryRule,

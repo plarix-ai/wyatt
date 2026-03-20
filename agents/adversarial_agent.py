@@ -17,7 +17,7 @@ from pathlib import Path
 # Ensure wyatt package is importable via the src layout
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from wyatt.core.logger import Color, _color, log_error, log_summary
+from core.logger import Color, _color, log_error, log_summary
 
 # =============================================================================
 # Agent Socket Client

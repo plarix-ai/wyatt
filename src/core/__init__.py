@@ -10,12 +10,12 @@ This package contains the core components:
 - exceptions: PolicyViolationError and related errors
 """
 
-from wyatt.core.boundaries import BoundaryEnforcer, create_default_config
-from wyatt.core.daemon import WyattDaemon
-from wyatt.core.exceptions import EnforcerError, PolicyViolationError, WyattError
-from wyatt.core.logger import log_enforcement
-from wyatt.core.socket_server import WyattSocketServer
-from wyatt.core.models import (
+from core.boundaries import BoundaryEnforcer, create_default_config
+from core.daemon import WyattDaemon
+from core.exceptions import EnforcerError, PolicyViolationError, WyattError
+from core.logger import log_enforcement
+from core.socket_server import WyattSocketServer
+from core.models import (
     AFBDecision,
     AFBType,
     BoundaryConfig,
