@@ -105,8 +105,21 @@ class BoundaryEnforcer:
         """
         Check if arguments are permitted for this agent-tool combination.
 
-        Applies data rules to check argument values against allow/deny patterns.
+        Order of checks:
+        1. Path traversal detection (catches .., %2e, null bytes)
+        2. Deny pattern matching
+        3. Allow pattern matching
         """
+        # FIRST: check for path traversal attacks on ALL args
+        # This must run before pattern matching to catch evasions
+        for arg_name, arg_value in args.items():
+            if isinstance(arg_value, str) and self._is_path_traversal(arg_value):
+                return AFBDecision(
+                    afb=AFBType.DATA,
+                    verdict=Verdict.DENY,
+                    reason=f"path traversal detected in {arg_name}",
+                )
+
         # Find applicable rules
         applicable_rules = [
             rule
@@ -151,15 +164,6 @@ class BoundaryEnforcer:
                         verdict=Verdict.DENY,
                         reason=f"{rule.arg_name}={arg_str} not in allow patterns",
                     )
-
-        # Check for path traversal attacks
-        for arg_name, arg_value in args.items():
-            if isinstance(arg_value, str) and self._is_path_traversal(arg_value):
-                return AFBDecision(
-                    afb=AFBType.DATA,
-                    verdict=Verdict.DENY,
-                    reason=f"path traversal detected in {arg_name}",
-                )
 
         return AFBDecision(
             afb=AFBType.DATA,
