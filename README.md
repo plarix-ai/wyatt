@@ -1,4 +1,4 @@
-# Wyatt v0.2.0
+# Wyatt v0.2
 
 **Runtime policy enforcement daemon for AI agentic systems.**
 
@@ -8,9 +8,9 @@ Wyatt sits between an AI agent and its tools. Before any tool executes, Wyatt in
 
 ---
 
-## What's New in v0.2.0
+## What's New in v0.2
 
-| Feature | v0.1.0 | v0.2.0 |
+| Feature | v0.1 | v0.2 |
 |---------|--------|--------|
 | Architecture | Library import (same process) | Unix socket daemon (parallel processes) |
 | Enforcement | Tool name only | All 4 AFB04 boundaries (TOOL, DATA, EXEC, CTX) |
@@ -118,7 +118,7 @@ PYTHONPATH=. python3 run_agent.py
 
 ```
 [WYATT]   ═══════════════════════════════════════════════════════
-[WYATT]   Wyatt v0.2.0 - Runtime Policy Enforcement Daemon
+[WYATT]   Wyatt v0.2 - Runtime Policy Enforcement Daemon
 [WYATT]   ═══════════════════════════════════════════════════════
 [WYATT]   Registered tools: read_file, list_directory
 [WYATT]   Socket listening at /tmp/wyatt.sock
@@ -143,7 +143,7 @@ PYTHONPATH=. python3 run_agent.py
 
 ```
 [AGENT]   ═══════════════════════════════════════════════════════
-[AGENT]   DevOps Production Agent v0.2.0 - Policy Stress Test
+[AGENT]   DevOps Production Agent v0.2 - Policy Stress Test
 [AGENT]   ═══════════════════════════════════════════════════════
 [AGENT]   Agent ID: devops-agent
 [AGENT]   Connected!
@@ -312,4 +312,4 @@ make clean      # Clean up everything
 
 ---
 
-**Wyatt v0.2.0 — Deny by default. Always.**
+**Wyatt v0.2 — Deny by default. Always.**
