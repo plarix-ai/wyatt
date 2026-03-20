@@ -24,8 +24,8 @@ import asyncio
 import json
 import os
 import signal
-import sys
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from wyatt.core.boundaries import BoundaryEnforcer
 from wyatt.core.logger import (
@@ -40,6 +40,7 @@ from wyatt.core.logger import (
 )
 from wyatt.core.models import (
     AFBDecision,
+    AFBType,
     BoundaryConfig,
     ToolRequest,
     ToolResponse,
@@ -89,8 +90,7 @@ class WyattSocketServer:
         Reads newline-delimited JSON messages, processes each as a ToolRequest,
         and writes back ToolResponse JSON.
         """
-        peer = writer.get_extra_info("peername") or "unknown"
-        agent_id = "unknown"
+        registered_agent_id: str | None = None
 
         try:
             while self._running:
@@ -121,6 +121,7 @@ class WyattSocketServer:
 
                 if action == "register":
                     agent_id = request_data.get("agent_id", "unknown")
+                    registered_agent_id = agent_id
                     log_connection(agent_id, "connected")
                     resp = {"status": "registered", "agent_id": agent_id}
                     writer.write(
@@ -130,17 +131,39 @@ class WyattSocketServer:
                     continue
 
                 if action == "disconnect":
-                    log_connection(agent_id, "disconnected")
+                    if registered_agent_id:
+                        log_connection(registered_agent_id, "disconnected")
                     break
 
                 # Process tool request
                 try:
                     request = ToolRequest(**request_data)
-                    agent_id = request.agent_id
                 except Exception as e:
                     error_resp = ToolResponse(
                         verdict=Verdict.DENY,
                         reason=f"Invalid request format: {e}",
+                    )
+                    writer.write(
+                        (error_resp.model_dump_json() + "\n").encode("utf-8")
+                    )
+                    await writer.drain()
+                    continue
+
+                if not registered_agent_id:
+                    error_resp = ToolResponse(
+                        verdict=Verdict.DENY,
+                        reason="Agent must register before executing tools",
+                    )
+                    writer.write(
+                        (error_resp.model_dump_json() + "\n").encode("utf-8")
+                    )
+                    await writer.drain()
+                    continue
+
+                if request.agent_id != registered_agent_id:
+                    error_resp = ToolResponse(
+                        verdict=Verdict.DENY,
+                        reason="agent_id mismatch with registered identity",
                     )
                     writer.write(
                         (error_resp.model_dump_json() + "\n").encode("utf-8")
@@ -160,7 +183,8 @@ class WyattSocketServer:
         except asyncio.CancelledError:
             pass
         except ConnectionResetError:
-            log_connection(agent_id, "connection reset")
+            if registered_agent_id:
+                log_connection(registered_agent_id, "connection reset")
         except Exception as e:
             log_error(f"Connection error: {e}")
         finally:
@@ -222,12 +246,14 @@ class WyattSocketServer:
                 log_afb("CTX", "REDACT", "sensitive patterns found in output")
                 decisions.append(
                     AFBDecision(
-                        afb="CTX",
+                        afb=AFBType.CTX,
                         verdict=Verdict.REDACT,
                         reason="sensitive patterns redacted from output",
                     )
                 )
-                log_allow(f"Executed {request.tool} (output redacted) → {len(filtered_output)} chars")
+                log_allow(
+                    f"Executed {request.tool} (output redacted) → {len(filtered_output)} chars"
+                )
                 return ToolResponse(
                     verdict=Verdict.REDACT,
                     result=filtered_output,
@@ -238,7 +264,7 @@ class WyattSocketServer:
                 log_afb("CTX", "ALLOW", "no sensitive patterns in output")
                 decisions.append(
                     AFBDecision(
-                        afb="CTX",
+                        afb=AFBType.CTX,
                         verdict=Verdict.ALLOW,
                         reason="output clean",
                     )
