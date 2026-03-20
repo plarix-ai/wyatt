@@ -33,13 +33,13 @@ stop:
 	docker compose down
 
 daemon:
-	PYTHONPATH=. python3 run_wyatt.py
+	PYTHONPATH=src python3 run_wyatt.py
 
 agent:
-	PYTHONPATH=. python3 run_agent.py
+	PYTHONPATH=src python3 run_agent.py
 
 test:
-	PYTHONPATH=. python3 -m pytest tests/ -v
+	PYTHONPATH=src python3 -m pytest tests/ -v
 
 logs:
 	docker compose logs -f opa
