@@ -53,7 +53,7 @@ def _color(text: str, color: Color, bold: bool = False) -> str:
     return f"{prefix}{color.value}{text}{Color.RESET.value}"
 
 
-def _tag(name: str, color: Color, width: int = 7) -> str:
+def _tag(name: str, color: Color, width: int = 10) -> str:
     """Format a tag like [WYATT] with color and fixed width."""
     tag = f"[{name}]".ljust(width + 2)
     return _color(tag, color, bold=True)
