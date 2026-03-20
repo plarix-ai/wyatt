@@ -1,85 +1,230 @@
 """
-Structured logging for Wyatt.
+Colored human-readable logging for Wyatt v0.2.0.
 
-Every enforcement decision produces exactly one CEE, which is logged
-as structured JSON. No print statements. Clean audit trail.
+Replaces JSON structlog with clear [TAG] format and ANSI colors.
+Designed for live terminal feedback during daemon operation.
 
-Connects to:
-- daemon.py: Calls log_enforcement() for every decision
-- models.py: Uses same CEE field names for consistency
+Example output:
+    [WYATT] Daemon started on /tmp/wyatt.sock
+    [REQ]   agent-001 → read_file({path: /etc/passwd})
+    [AFB04] TOOL: ALLOW (read_file in allowlist)
+    [AFB04] DATA: DENY (path matches /etc/*)
+    [DENY]  Blocked: /etc/* forbidden for agent-001
 """
 
 import sys
-from typing import Any, cast
-
-import structlog
-
-# Configure structlog for JSON output
-structlog.configure(
-    processors=[
-        structlog.processors.TimeStamper(fmt="iso"),
-        # Note: add_log_level removed - always INFO, adds no information
-        structlog.processors.JSONRenderer(),
-    ],
-    context_class=dict,
-    logger_factory=structlog.PrintLoggerFactory(file=sys.stdout),
-    cache_logger_on_first_use=True,
-)
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Any
 
 
-def get_logger(name: str) -> structlog.BoundLogger:
+class Color(Enum):
+    """ANSI color codes for terminal output."""
+
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+
+    # Tag colors
+    CYAN = "\033[36m"  # [WYATT]
+    BLUE = "\033[34m"  # [REQ]
+    YELLOW = "\033[33m"  # [AFB04]
+    GREEN = "\033[32m"  # [ALLOW]
+    RED = "\033[31m"  # [DENY]
+    MAGENTA = "\033[35m"  # [AGENT]
+    WHITE = "\033[37m"  # Default text
+
+
+# Check if terminal supports colors
+def _supports_color() -> bool:
+    """Check if stdout supports ANSI colors."""
+    if not hasattr(sys.stdout, "isatty"):
+        return False
+    if not sys.stdout.isatty():
+        return False
+    return True
+
+
+COLORS_ENABLED = _supports_color()
+
+
+def _color(text: str, color: Color, bold: bool = False) -> str:
+    """Apply ANSI color to text if colors are enabled."""
+    if not COLORS_ENABLED:
+        return text
+    prefix = f"{Color.BOLD.value}" if bold else ""
+    return f"{prefix}{color.value}{text}{Color.RESET.value}"
+
+
+def _tag(name: str, color: Color, width: int = 7) -> str:
+    """Format a tag like [WYATT] with color and fixed width."""
+    tag = f"[{name}]".ljust(width + 2)
+    return _color(tag, color, bold=True)
+
+
+def _timestamp() -> str:
+    """Get current timestamp in HH:MM:SS format."""
+    now = datetime.now(timezone.utc)
+    return _color(now.strftime("%H:%M:%S"), Color.WHITE)
+
+
+def _format_args(args: dict[str, Any] | None) -> str:
+    """Format tool arguments for display."""
+    if not args:
+        return "()"
+    parts = [f"{k}: {v}" for k, v in args.items()]
+    return "({" + ", ".join(parts) + "})"
+
+
+# =============================================================================
+# Public Logging Functions
+# =============================================================================
+
+
+def log_wyatt(message: str) -> None:
+    """Log a Wyatt system message."""
+    print(f"{_tag('WYATT', Color.CYAN)} {message}")
+
+
+def log_wyatt_banner(version: str = "0.2.0") -> None:
+    """Print the Wyatt startup banner."""
+    line = "═" * 55
+    print(f"{_tag('WYATT', Color.CYAN)} {_color(line, Color.CYAN)}")
+    print(
+        f"{_tag('WYATT', Color.CYAN)} "
+        f"{_color(f'Wyatt v{version} - Runtime Policy Enforcement Daemon', Color.CYAN, bold=True)}"
+    )
+    print(f"{_tag('WYATT', Color.CYAN)} {_color(line, Color.CYAN)}")
+
+
+def log_connection(agent_id: str, action: str = "connected") -> None:
+    """Log agent connection/disconnection."""
+    print(f"{_tag('CONN', Color.BLUE)} Agent {action}: {_color(agent_id, Color.MAGENTA, bold=True)}")
+
+
+def log_request(agent_id: str, tool: str, args: dict[str, Any] | None = None) -> None:
+    """Log an incoming tool request."""
+    arrow = _color("→", Color.WHITE)
+    agent = _color(agent_id, Color.MAGENTA)
+    tool_name = _color(tool, Color.YELLOW, bold=True)
+    formatted_args = _color(_format_args(args), Color.WHITE)
+    print(f"{_tag('REQ', Color.BLUE)} {agent} {arrow} {tool_name}{formatted_args}")
+
+
+def log_afb(afb_type: str, verdict: str, reason: str) -> None:
     """
-    Get a structured logger instance.
+    Log an AFB boundary check result.
 
     Args:
-        name: Logger name (typically module name)
-
-    Returns:
-        A bound logger that outputs JSON
+        afb_type: Type of boundary (e.g., "TOOL", "DATA", "EXEC", "CTX")
+        verdict: "ALLOW" or "DENY"
+        reason: Explanation of the decision
     """
-    return cast(structlog.BoundLogger, structlog.get_logger(name))
+    tag = f"AFB04:{afb_type}"
+    verdict_color = Color.GREEN if verdict == "ALLOW" else Color.RED
+    verdict_text = _color(verdict, verdict_color, bold=True)
+    print(f"{_tag(tag, Color.YELLOW)} {verdict_text} ({reason})")
+
+
+def log_allow(message: str) -> None:
+    """Log an ALLOW decision."""
+    print(f"{_tag('ALLOW', Color.GREEN)} {_color(message, Color.GREEN)}")
+
+
+def log_deny(message: str) -> None:
+    """Log a DENY decision."""
+    print(f"{_tag('DENY', Color.RED)} {_color(message, Color.RED, bold=True)}")
+
+
+def log_agent(message: str) -> None:
+    """Log an agent-side message."""
+    print(f"{_tag('AGENT', Color.MAGENTA)} {message}")
+
+
+def log_agent_banner(name: str = "Adversarial Agent", version: str = "0.2.0") -> None:
+    """Print the agent startup banner."""
+    line = "═" * 55
+    print(f"{_tag('AGENT', Color.MAGENTA)} {_color(line, Color.MAGENTA)}")
+    print(
+        f"{_tag('AGENT', Color.MAGENTA)} "
+        f"{_color(f'{name} v{version} - Policy Stress Test', Color.MAGENTA, bold=True)}"
+    )
+    print(f"{_tag('AGENT', Color.MAGENTA)} {_color(line, Color.MAGENTA)}")
+
+
+def log_attack(strategy_num: int, description: str) -> None:
+    """Log an attack strategy being executed."""
+    header = _color(f"Strategy {strategy_num}:", Color.YELLOW, bold=True)
+    print(f"{_tag('ATTACK', Color.RED)} {header} {description}")
+
+
+def log_result(verdict: str, message: str) -> None:
+    """Log an attack result."""
+    verdict_color = Color.GREEN if verdict == "ALLOW" else Color.RED
+    verdict_text = _color(verdict, verdict_color, bold=True)
+    print(f"{_tag('RESULT', Color.WHITE)} {verdict_text} - {message}")
+
+
+def log_summary(total: int, blocked: int, allowed: int) -> None:
+    """Log attack summary."""
+    line = "═" * 55
+    print(f"\n{_color(line, Color.WHITE)}")
+    summary = (
+        f"{_color(str(total), Color.YELLOW, bold=True)} attacks attempted, "
+        f"{_color(str(blocked), Color.GREEN, bold=True)} blocked, "
+        f"{_color(str(allowed), Color.RED, bold=True)} allowed"
+    )
+    print(f"{_tag('SUMMARY', Color.CYAN)} {summary}")
+    print(f"{_color(line, Color.WHITE)}\n")
+
+
+def log_error(message: str) -> None:
+    """Log an error message."""
+    print(f"{_tag('ERROR', Color.RED)} {_color(message, Color.RED, bold=True)}")
+
+
+# =============================================================================
+# Legacy Compatibility (for existing tests)
+# =============================================================================
 
 
 def log_enforcement(
     operation: str,
     principal: str,
-    state_delta: dict[str, Any],
+    state_delta: dict,
     decision: str,
     policy_basis: str,
 ) -> None:
     """
-    Log an enforcement decision (CEE).
+    Log an enforcement decision (CEE) - legacy compatibility.
 
-    This is the primary logging function. Every tool call interception
-    calls this exactly once.
-
-    Args:
-        operation: Tool being called
-        principal: Agent making the call
-        state_delta: Tool arguments
-        decision: "ALLOW" or "DENY"
-        policy_basis: Why this decision was made
-
-    Returns:
-        None. Logs to stdout as JSON.
-
-    Example JSON output:
-        {
-            "timestamp": "2026-03-19T12:00:00.000000Z",
-            "event": "enforcement_decision",
-            "operation": "read_file",
-            "principal": "agent-001",
-            "state_delta": {"path": "/etc/passwd"},
-            "decision": "ALLOW",
-            "policy_basis": "agent-001 permitted to read_file"
-        }
+    This maintains backward compatibility with v0.1.0 tests.
+    In v0.2.0, use log_request + log_afb + log_allow/log_deny instead.
     """
-    logger = get_logger("wyatt.enforcement")
-    logger.info(
-        "enforcement_decision",
-        operation=operation,
-        principal=principal,
-        state_delta=state_delta,
-        decision=decision,
-        policy_basis=policy_basis,
-    )
+    log_request(principal, operation, state_delta)
+    log_afb("TOOL", decision, policy_basis)
+    if decision == "ALLOW":
+        log_allow(f"Executed {operation}")
+    else:
+        log_deny(f"Blocked: {policy_basis}")
+
+
+def get_logger(name: str):
+    """
+    Legacy compatibility - returns a simple logger object.
+
+    In v0.2.0, use the specific log_* functions instead.
+    """
+
+    class SimpleLogger:
+        def info(self, event: str, **kwargs):
+            if event == "enforcement_decision":
+                log_enforcement(
+                    operation=kwargs.get("operation", "unknown"),
+                    principal=kwargs.get("principal", "unknown"),
+                    state_delta=kwargs.get("state_delta", {}),
+                    decision=kwargs.get("decision", "DENY"),
+                    policy_basis=kwargs.get("policy_basis", ""),
+                )
+
+    return SimpleLogger()

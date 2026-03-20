@@ -99,7 +99,7 @@ async def test_daemon_tool_never_executes_when_denied():
 
 @pytest.mark.asyncio
 async def test_daemon_logs_allow_decision(capsys):
-    """Daemon logs CEE for allowed operations with all 4 required fields."""
+    """Daemon logs CEE for allowed operations with all required info."""
     daemon = WyattDaemon()
 
     await daemon.execute_tool(
@@ -110,18 +110,16 @@ async def test_daemon_logs_allow_decision(capsys):
     )
 
     captured = capsys.readouterr()
-    # Verify all 4 CEE fields are present in the log
-    assert "enforcement_decision" in captured.out
+    # Verify key elements are logged (v0.2.0 uses human-readable format)
     assert "ALLOW" in captured.out
     assert "agent-001" in captured.out      # principal
-    assert "read_file" in captured.out       # operation
-    assert "state_delta" in captured.out     # state_delta field must be present
-    assert "policy_basis" in captured.out    # policy_basis field must be present
+    assert "read_file" in captured.out      # operation
+    assert "/test.txt" in captured.out      # args shown
 
 
 @pytest.mark.asyncio
 async def test_daemon_logs_deny_decision(capsys):
-    """Daemon logs CEE for denied operations with all 4 required fields."""
+    """Daemon logs CEE for denied operations with all required info."""
     daemon = WyattDaemon()
 
     with pytest.raises(PolicyViolationError):
@@ -133,13 +131,11 @@ async def test_daemon_logs_deny_decision(capsys):
         )
 
     captured = capsys.readouterr()
-    # Verify all 4 CEE fields are present in the log
-    assert "enforcement_decision" in captured.out
+    # Verify key elements are logged (v0.2.0 uses human-readable format)
     assert "DENY" in captured.out
     assert "agent-001" in captured.out      # principal
-    assert "delete_file" in captured.out     # operation
-    assert "state_delta" in captured.out     # state_delta field must be present
-    assert "policy_basis" in captured.out    # policy_basis field must be present
+    assert "delete_file" in captured.out    # operation
+    assert "/test.txt" in captured.out      # args shown
 
 
 @pytest.mark.asyncio
