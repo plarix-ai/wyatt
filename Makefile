@@ -26,7 +26,7 @@ start:
 	@echo "Waiting for OPA sidecar to become healthy..."
 	@for i in $$(seq 1 15); do \
 		if curl -s -f http://localhost:8181/health > /dev/null; then \
-			echo "OPA is genuinely ready at http://localhost:8181"; \
+			echo "OPA is ready at http://localhost:8181"; \
 			exit 0; \
 		fi; \
 		echo "Polling OPA health check... ($$i/15)"; \
