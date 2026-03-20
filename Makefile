@@ -22,15 +22,15 @@ install:
 	python3 -m pip install -e ".[dev]"
 
 start:
-	docker compose up -d
+	docker-compose up -d
 	@echo "OPA is starting... waiting for health check..."
 	@sleep 3
-	@docker compose ps
+	@docker-compose ps
 	@echo ""
 	@echo "OPA is ready at http://localhost:8181"
 
 stop:
-	docker compose down
+	docker-compose down
 
 daemon:
 	PYTHONPATH=src python3 run_wyatt.py
@@ -42,10 +42,10 @@ test:
 	PYTHONPATH=src python3 -m pytest tests/ -v
 
 logs:
-	docker compose logs -f opa
+	docker-compose logs -f opa
 
 clean:
-	docker compose down -v
+	docker-compose down -v
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete
 	rm -f /tmp/wyatt.sock
