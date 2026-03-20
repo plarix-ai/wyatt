@@ -26,8 +26,10 @@ is_permitted if {
 }
 
 # Agent-to-tool mapping
-# agent-001 is permitted to use read_file only
+# Each agent has an explicit list of permitted tools
 permitted_tools := {
     "agent-001": ["read_file"],
     "agent-researcher": ["search_web", "read_file"],
+    "devops-agent": ["read_file", "list_directory"],
+    "adversarial-agent": ["read_file", "list_directory"],
 }
