@@ -1,4 +1,4 @@
-# [Wyatt v0.3.0-alpha](https://plarix.dev)
+# [Wyatt v0.3-alpha](https://plarix.dev)
 
 **Runtime policy enforcement daemon for AI agentic systems.**
 
