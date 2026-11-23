@@ -11,6 +11,9 @@ agents:
   bot: {{ uid: {uid} }}
   admin: {{ uid: {other_uid}, labels: [admin] }}
   ci: {{ token_sha256: "{token_sha256}" }}
+  # Its own agent, so the SSRF attacks reach the http driver instead of
+  # being stopped early by no-exfil on bot's history.
+  fetcher: {{ uid: {uid} }}
 
 tools:
   read: {{ driver: fs.read, root: "{root}" }}
@@ -25,11 +28,15 @@ tools:
 rules:
   - {{ id: read, allow: read, agents: [bot, ci] }}
   - {{ id: tools, allow: [echo, flood, sleep, post, fetch], agents: bot }}
+  - {{ id: ci-post, allow: post, agents: ci }}
+  - {{ id: fetcher, allow: fetch, agents: fetcher }}
   # Deliberately careless: any argument at all. The sandbox still holds.
   - {{ id: cat-anything, allow: cat, agents: bot }}
+  # history.labels holds the labels of every session the agent has had,
+  # so starting a new session does not get around the rule.
   - id: no-exfil
     deny: [post, fetch]
-    when: {{ session.labels: {{ contains: secret }} }}
-    reason: this session has read a secret
+    when: {{ history.labels: {{ contains: secret }} }}
+    reason: this agent has read a secret
   - {{ id: deploy, approve: deploy }}
   - {{ id: admin, allow: "*", agents: admin }}

