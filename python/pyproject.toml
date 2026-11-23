@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wyatt-client"
+version = "1.0.0rc1"
+description = "Python client for the Wyatt runtime policy daemon"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+dependencies = []
+classifiers = [
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security",
+]
+
+[project.optional-dependencies]
+langchain = ["langchain-core>=0.3"]
+openai-agents = ["openai-agents>=0.4"]
+
+[project.urls]
+Source = "https://github.com/plarix-ai/wyatt"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+filterwarnings = ["ignore::DeprecationWarning:langsmith.*"]
