@@ -1,7 +1,7 @@
 //! Offline policy tools: check, eval, test, bench and token. None of them
 //! need a running daemon.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -84,6 +84,9 @@ struct Prior {
     calls: u64,
     #[serde(default)]
     tools: BTreeSet<String>,
+    /// Calls already counted against each `max_calls` limit, by limit id.
+    #[serde(default)]
+    limits: BTreeMap<String, u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -145,11 +148,14 @@ fn run_case(p: &Policy, c: &Case) -> Result<Decision, String> {
         Some(t) => clock::parse_rfc3339(t).ok_or_else(|| format!("`now: {t}` is not an RFC 3339 UTC time"))?,
         None => clock::now_ms(),
     };
+    if let Some(id) = c.session.limits.keys().find(|id| !p.limits.iter().any(|l| l.id == **id)) {
+        return Err(format!("session.limits names `{id}`, which is not a limit in the policy"));
+    }
     let mut s = Session {
         labels: c.session.labels.clone(),
         calls: c.session.calls,
         tools: c.session.tools.clone(),
-        ..Session::default()
+        limit_calls: c.session.limits.clone(),
     };
     let mut rates = RateState::default();
     for (i, step) in c.before.iter().enumerate() {
@@ -357,5 +363,23 @@ rules:
         );
         let err = run_case(&p, &c).unwrap_err();
         assert!(err.starts_with("expected allow, got deny"), "{err}");
+    }
+
+    #[test]
+    fn cases_can_start_a_limit_part_way_through() {
+        let p = Policy::from_yaml(&format!("{POLICY}limits:\n  - {{ id: budget, max_calls: 5 }}\n")).unwrap();
+        let at = "now: '2026-11-23T12:00:00Z'";
+        let c = case(&format!(
+            "{{ name: a, agent: ops, tool: read, args: {{ path: /srv/a }}, {at}, session: {{ limits: {{ budget: 5 }} }}, expect: deny, code: call_limit }}"
+        ));
+        run_case(&p, &c).unwrap();
+        let c = case(&format!(
+            "{{ name: b, agent: ops, tool: read, args: {{ path: /srv/a }}, {at}, session: {{ limits: {{ budget: 4 }} }}, expect: allow }}"
+        ));
+        run_case(&p, &c).unwrap();
+        let c = case(&format!(
+            "{{ name: c, agent: ops, tool: read, args: {{ path: /srv/a }}, {at}, session: {{ limits: {{ budgte: 1 }} }}, expect: allow }}"
+        ));
+        assert!(run_case(&p, &c).unwrap_err().contains("`budgte`"));
     }
 }
