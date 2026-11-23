@@ -7,7 +7,7 @@ version = "1.0.0-rc.1"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/plarix-ai/wyatt"
-rust-version = "1.85"
+rust-version = "1.88"
 
 [profile.dev]
 debug = "line-tables-only"
