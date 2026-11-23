@@ -1,0 +1,67 @@
+name: ci
+
+on:
+  push:
+    branches: [main, v1]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  rust:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets --locked
+      - run: cargo test --locked
+
+  msrv:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --all-targets --locked
+
+  integration:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: cargo build --locked
+      - name: Landlock ABI on this runner
+        run: cat /sys/kernel/security/lsm; uname -r
+      - run: pip install "./python[langchain,openai-agents]" pytest
+      - name: Python client and adapters against a live daemon
+        working-directory: python
+        run: python -m pytest -q
+      - name: Example policies
+        run: |
+          for d in examples/devops examples/claude-code; do
+            target/debug/wyatt check --strict "$d/wyatt.yaml"
+            target/debug/wyatt test "$d/tests.yaml"
+          done
+      - name: Attack suite
+        run: python examples/attacks/run.py
