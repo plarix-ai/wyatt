@@ -89,6 +89,11 @@ enum Cmd {
     },
     /// Make a random agent token and the hash to put in the policy.
     Token,
+    /// Hook into an agent runtime that has a hook system.
+    Hook {
+        #[command(subcommand)]
+        cmd: HookCmd,
+    },
     /// Read and verify the audit log.
     Audit {
         /// State directory holding audit.jsonl [env: WYATT_STATE]
@@ -149,6 +154,25 @@ enum Cmd {
     /// Load the policy file again. A file with errors is refused and the
     /// current policy stays.
     Reload,
+}
+
+#[derive(Subcommand)]
+enum HookCmd {
+    /// PreToolUse and PostToolUse hook for Claude Code.
+    ClaudeCode {
+        /// Agent name in the policy.
+        #[arg(long, default_value = "claude-code")]
+        agent: String,
+        /// Agent socket [env: WYATT_SOCKET]
+        #[arg(long)]
+        socket: Option<PathBuf>,
+        /// When the policy allows a call, skip Claude Code's own prompt.
+        #[arg(long)]
+        auto_allow: bool,
+        /// Print the settings.json block that installs this hook, then exit.
+        #[arg(long)]
+        print_settings: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -220,6 +244,17 @@ fn main() -> ExitCode {
         Cmd::Bench { tool, args, agent, policy, n } => ok(json_arg(&args)
             .and_then(|args| cmd::policy::bench(&policy.unwrap_or_else(paths::policy), &agent, &tool, args, n.max(1)))),
         Cmd::Token => ok(cmd::policy::token()),
+        Cmd::Hook { cmd: HookCmd::ClaudeCode { agent, socket, auto_allow, print_settings } } => {
+            if print_settings {
+                println!("{}", cmd::hook::settings());
+                Ok(ExitCode::SUCCESS)
+            } else {
+                let socket = socket.unwrap_or_else(paths::agent_socket);
+                let token = std::env::var("WYATT_TOKEN").ok().filter(|t| !t.is_empty());
+                let o = cmd::hook::Opts { socket: &socket, agent: &agent, token, auto_allow };
+                Ok(ExitCode::from(cmd::hook::claude_code(&o)))
+            }
+        }
         Cmd::Audit { state, cmd } => {
             let state = state.unwrap_or_else(paths::state_dir);
             match cmd {
