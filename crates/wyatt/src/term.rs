@@ -39,7 +39,7 @@ pub fn cyan(s: &str) -> String {
 pub fn verdict(v: &str) -> String {
     match v {
         "allow" | "approved" | "ok" => green(v),
-        "deny" | "denied" | "error" | "refused" | "timeout" => red(v),
+        "deny" | "denied" | "error" | "refused" | "timeout" | "stopped" | "frozen" => red(v),
         "approve" => yellow(v),
         _ => v.to_string(),
     }
