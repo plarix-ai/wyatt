@@ -182,7 +182,7 @@ fn check_field(out: &mut Out, at: &str, r: &Rule, tools: &[&Tool], field: &str, 
                     );
                 }
             }
-            (ty, Some(_)) if !matches!(ty, ArgType::Object | ArgType::Any | ArgType::List) => {
+            (ty, Some(_)) if !matches!(ty, ArgType::Url | ArgType::Object | ArgType::Any | ArgType::List) => {
                 out.push(Level::Error, at, format!("`{field}`: `{name}` is a {}, it has no fields", ty.name()));
             }
             _ => {}
@@ -248,9 +248,12 @@ rules:
             r#"
 version: 1
 agents: { ops: { uid: 1 } }
-tools: { read: { driver: fs.read, root: /srv } }
+tools:
+  read: { driver: fs.read, root: /srv }
+  get: { driver: http, hosts: ["*.github.com"] }
 rules:
   - { id: logs, allow: read, when: { args.path: { glob: "/srv/logs/**" } } }
+  - { id: gh, allow: get, agents: ops, when: { args.url.host: { suffix: ".github.com" }, args.url.scheme: https } }
   - { id: keys, deny: read, when: { args.path: { glob: "**/*.key" } } }
 "#,
         );
