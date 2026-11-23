@@ -75,6 +75,14 @@ tests:
     expect: deny
     rule: no-exfil
 
+  - name: a new session does not wash the secret off
+    agent: oncall
+    session: { history: [secret] }
+    tool: post_incident
+    args: { url: "https://hooks.slack.com/services/T0001/B0002/xyz", body: "{}" }
+    expect: deny
+    rule: no-exfil
+
   - name: the status page has no metadata endpoint behind it
     agent: oncall
     tool: status

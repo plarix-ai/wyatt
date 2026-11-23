@@ -81,10 +81,12 @@ rules:
     allow: post_incident
     when: { args.url.path: { prefix: /services/T0001/B0002/ } }
 
+  # history.labels, not session.labels: a new session must not wash the
+  # label off. Restarting the daemon clears it.
   - id: no-exfil
     deny: post_incident
-    when: { session.labels: { contains: secret } }
-    reason: this session has read a secret, so it cannot post outside
+    when: { history.labels: { contains: secret } }
+    reason: this agent has read a secret, so it cannot post outside
 
   - id: restart
     approve: restart_service
