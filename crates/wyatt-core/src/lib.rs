@@ -7,6 +7,7 @@
 
 pub mod cond;
 pub mod dlp;
+pub mod engine;
 pub mod error;
 pub mod net;
 pub mod path;
@@ -14,5 +15,6 @@ pub mod policy;
 pub mod session;
 pub mod units;
 
+pub use engine::{Code, Decision, Request, Verdict, decide};
 pub use policy::{Policy, PolicyError, PolicyErrors};
 pub use session::{RateState, Session};
