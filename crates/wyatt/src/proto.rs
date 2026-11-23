@@ -5,6 +5,8 @@
 //!   {"op":"call","id":1,"tool":"read_logs","args":{"path":"/var/log/app.log"}}
 //!   {"op":"check","id":2,"tool":"Bash","args":{...},"ticket":"toolu_01","ask":true}
 //!   {"op":"result","ticket":"toolu_01","ok":true,"output":"..."}
+//!   {"op":"visible","tools":["mcp__github__create_issue", ...]}
+//!   {"op":"notice","event":"poisoned","tool":"mcp__x__add","detail":{...}}
 //!
 //! Control socket (owner only):
 //!   {"op":"status"} {"op":"sessions"} {"op":"approvals"}
@@ -48,6 +50,23 @@ pub enum AgentReq {
         /// The client asks its own user when the verdict is approve.
         #[serde(default)]
         ask: bool,
+    },
+    /// Which of these tool names could this agent ever be allowed to call?
+    Visible {
+        #[serde(default)]
+        id: Value,
+        tools: Vec<String>,
+    },
+    /// Something a client saw and wants on the record, such as a poisoned
+    /// MCP tool. The daemon logs it with the client's identity.
+    Notice {
+        #[serde(default)]
+        id: Value,
+        event: String,
+        #[serde(default)]
+        tool: Option<String>,
+        #[serde(default)]
+        detail: Value,
     },
     Result {
         #[serde(default)]

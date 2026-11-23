@@ -519,6 +519,47 @@ fn tool_result(st: &State, sess: &Mutex<Sess>, id: &Value, ticket: &str, ok: boo
     r
 }
 
+fn visible(st: &State, sess: &Mutex<Sess>, id: &Value, tools: Vec<String>) -> Value {
+    let loaded = st.policy();
+    let p = &loaded.policy;
+    let agent = lock(sess).agent.clone();
+    // Visible: some rule could allow or approve it, and no unconditional
+    // deny rule covers it.
+    let keep: Vec<String> = tools
+        .into_iter()
+        .filter(|t| {
+            p.tool(t).is_some()
+                && p.rules.iter().any(|r| r.effect != Effect::Deny && r.targets(&agent, t))
+                && !p.rules.iter().any(|r| r.effect == Effect::Deny && r.when.is_true() && r.targets(&agent, t))
+        })
+        .collect();
+    json!({ "id": id, "tools": keep })
+}
+
+fn notice(
+    st: &State,
+    peer: &Peer,
+    sess: &Mutex<Sess>,
+    id: &Value,
+    event: &str,
+    tool: Option<String>,
+    detail: Value,
+) -> Value {
+    if event.is_empty() || event.len() > 64 || !event.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return proto::protocol_error(id, "event names use letters, digits, _ and -, up to 64");
+    }
+    let (agent, session) = {
+        let g = lock(sess);
+        (g.agent.clone(), g.id.clone())
+    };
+    let seq = st.log(
+        "notice",
+        json!({ "agent": agent, "session": session, "pid": peer.pid, "event": event, "tool": tool, "detail": detail }),
+    );
+    json!({ "id": id, "audit": seq })
+}
+
 fn hello(
     st: &State,
     peer: &Peer,
@@ -616,9 +657,14 @@ fn serve_agent(st: &State, stream: UnixStream) {
                     Err(r) => (r, true),
                 }
             }
-            (AgentReq::Call { id, .. } | AgentReq::Check { id, .. } | AgentReq::Result { id, .. }, None) => {
-                (proto::protocol_error(&id, "send hello first"), false)
-            }
+            (
+                AgentReq::Call { id, .. }
+                | AgentReq::Check { id, .. }
+                | AgentReq::Result { id, .. }
+                | AgentReq::Visible { id, .. }
+                | AgentReq::Notice { id, .. },
+                None,
+            ) => (proto::protocol_error(&id, "send hello first"), false),
             (AgentReq::Call { id, tool, args }, Some(s)) => {
                 (tool_call(st, &peer, s, &id, &tool, &args, Kind::Call, None, false), false)
             }
@@ -627,6 +673,10 @@ fn serve_agent(st: &State, stream: UnixStream) {
             }
             (AgentReq::Result { id, ticket, ok, output }, Some(s)) => {
                 (tool_result(st, s, &id, &ticket, ok, output), false)
+            }
+            (AgentReq::Visible { id, tools }, Some(s)) => (visible(st, s, &id, tools), false),
+            (AgentReq::Notice { id, event, tool, detail }, Some(s)) => {
+                (notice(st, &peer, s, &id, &event, tool, detail), false)
             }
         };
         if proto::write_line(&mut w, &resp).is_err() || close {

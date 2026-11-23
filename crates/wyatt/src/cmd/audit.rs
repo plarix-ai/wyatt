@@ -9,7 +9,7 @@ use anyhow::{Context, bail};
 use serde_json::{Value, json};
 
 use crate::audit;
-use crate::term::{bold, dim, green, pad, red, verdict};
+use crate::term::{bold, dim, green, pad, red, verdict, yellow};
 
 fn s(v: &Value) -> &str {
     v.as_str().unwrap_or("")
@@ -105,6 +105,7 @@ pub fn line(r: &Value) -> String {
             )
         }
         "hello" => format!("{} {} {}", s(&r["agent"]), red("refused"), dim(s(&r["reason"]))),
+        "notice" => format!("{} {} {}", s(&r["agent"]), yellow(s(&r["event"])), s(&r["tool"])),
         "control" => format!("{} by {} {}", s(&r["op"]), s(&r["by"]), dim(s(&r["reason"]))),
         "reload" => format!("{} {} {}", short(s(&r["from"])), dim("->"), short(s(&r["to"]))),
         "start" => format!("{} {} pid {}", s(&r["name"]), dim(short(s(&r["policy"]))), r["pid"]),
