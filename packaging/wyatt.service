@@ -1,0 +1,61 @@
+# Runs the daemon as its own user. Agents reach /run/wyatt/agent.sock by
+# being members of the wyatt group; the control socket and the audit key
+# stay private to the wyatt user (and root).
+#
+#   sudo useradd --system --no-create-home --shell /usr/sbin/nologin wyatt
+#   sudo usermod -aG wyatt <agent user>
+#   sudo install -D -m 0644 wyatt.yaml /etc/wyatt/wyatt.yaml
+#   sudo install -m 0644 packaging/wyatt.service /etc/systemd/system/
+#   sudo systemctl enable --now wyatt
+#
+# Operators: sudo wyatt --control /run/wyatt/control.sock status
+
+[Unit]
+Description=Wyatt runtime policy enforcement for AI agents
+Documentation=https://github.com/plarix-ai/wyatt
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=wyatt
+Group=wyatt
+ExecStart=/usr/local/bin/wyatt serve --policy /etc/wyatt/wyatt.yaml --socket /run/wyatt/agent.sock --control /run/wyatt/control.sock --state /var/lib/wyatt
+ExecReload=/usr/local/bin/wyatt reload --control /run/wyatt/control.sock
+Restart=on-failure
+# Secrets for ${env:NAME} in the policy, readable by root only.
+EnvironmentFile=-/etc/wyatt/env
+
+RuntimeDirectory=wyatt
+RuntimeDirectoryMode=0750
+StateDirectory=wyatt
+StateDirectoryMode=0700
+UMask=0077
+
+# The daemon only needs what its tools need. Add ReadWritePaths for fs.write
+# roots and anything proc tools write to; ProtectHome hides /home, so add
+# ReadOnlyPaths or BindReadOnlyPaths for tool roots under it.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+# proc tools inherit everything above and below. MemoryDenyWriteExecute is
+# left out because it breaks JIT runtimes such as node; add it if no tool
+# needs one. Add AF_NETLINK here if a tool runs commands such as `ip`.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target
