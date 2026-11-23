@@ -89,6 +89,14 @@ enum Cmd {
     },
     /// Make a random agent token and the hash to put in the policy.
     Token,
+    /// Read and verify the audit log.
+    Audit {
+        /// State directory holding audit.jsonl [env: WYATT_STATE]
+        #[arg(long, global = true)]
+        state: Option<PathBuf>,
+        #[command(subcommand)]
+        cmd: AuditCmd,
+    },
     /// Run the daemon.
     Serve {
         /// Policy file [env: WYATT_POLICY, default: ./wyatt.yaml]
@@ -143,6 +151,30 @@ enum Cmd {
     Reload,
 }
 
+#[derive(Subcommand)]
+enum AuditCmd {
+    /// Check every hash link and signature. Exits 1 if anything was changed.
+    Verify {
+        /// Public key as hex or @file, if not the one next to the log.
+        #[arg(long)]
+        key: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Print the last records, optionally following new ones.
+    Tail {
+        #[arg(short, default_value_t = 20)]
+        n: usize,
+        #[arg(short, long)]
+        follow: bool,
+        /// Raw JSON lines.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Print one record and every record that refers to it.
+    Show { seq: u64 },
+}
+
 fn json_arg(s: &str) -> anyhow::Result<serde_json::Value> {
     use anyhow::Context;
     let text = match s.strip_prefix('@') {
@@ -188,6 +220,16 @@ fn main() -> ExitCode {
         Cmd::Bench { tool, args, agent, policy, n } => ok(json_arg(&args)
             .and_then(|args| cmd::policy::bench(&policy.unwrap_or_else(paths::policy), &agent, &tool, args, n.max(1)))),
         Cmd::Token => ok(cmd::policy::token()),
+        Cmd::Audit { state, cmd } => {
+            let state = state.unwrap_or_else(paths::state_dir);
+            match cmd {
+                AuditCmd::Verify { key, json } => {
+                    cmd::audit::verify(&state, key.as_deref(), json).and_then(|ok| done(ok, 1))
+                }
+                AuditCmd::Tail { n, follow, json } => ok(cmd::audit::tail(&state, n, follow, json)),
+                AuditCmd::Show { seq } => ok(cmd::audit::show(&state, seq)),
+            }
+        }
         Cmd::Serve { policy, socket, control, state, socket_mode } => server::serve(server::Config {
             policy: policy.unwrap_or_else(paths::policy),
             socket: socket.unwrap_or_else(paths::agent_socket),
