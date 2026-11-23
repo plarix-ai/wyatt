@@ -30,7 +30,8 @@ use crate::proto::{self, AgentReq, ControlReq, Line};
 use crate::{clock, peer};
 
 const MAX_CONNECTIONS: usize = 256;
-const SESSION_IDLE: Duration = Duration::from_secs(3600);
+/// How long a named session keeps its labels with no connection open.
+const SESSION_IDLE: Duration = Duration::from_secs(24 * 3600);
 const TICKET_TTL: Duration = Duration::from_secs(3600);
 
 pub struct Config {
@@ -78,6 +79,8 @@ struct Sess {
     tickets: HashMap<String, Ticket>,
     last_used: Instant,
     connections: usize,
+    /// Named sessions outlive their connections; anonymous ones end with them.
+    named: bool,
 }
 
 enum Answer {
@@ -260,7 +263,17 @@ fn code_name(c: Code) -> String {
 }
 
 /// Decides, audits and (for approve) waits. Returns the final verdict.
-fn decide(st: &State, loaded: &Loaded, peer: &Peer, sess: &Mutex<Sess>, tool: &str, args: &Value) -> Outcome {
+/// `client_asks`: the client will ask its own user on approve (Claude Code
+/// does), so return at once instead of waiting on the control socket.
+fn decide(
+    st: &State,
+    loaded: &Loaded,
+    peer: &Peer,
+    sess: &Mutex<Sess>,
+    tool: &str,
+    args: &Value,
+    client_asks: bool,
+) -> Outcome {
     let p = &loaded.policy;
     let now = clock::now_ms();
     let (session_id, agent) = {
@@ -318,7 +331,9 @@ fn decide(st: &State, loaded: &Loaded, peer: &Peer, sess: &Mutex<Sess>, tool: &s
     if would.is_some() {
         r["enforced"] = false.into();
     }
-    if verdict == Verdict::Allow {
+    // An approval the client handles counts now: if the user says yes the
+    // tool runs without coming back here first.
+    if verdict == Verdict::Allow || (verdict == Verdict::Approve && client_asks) {
         s.state.record_success(tool, &d.labels, &d.limits);
         s.last_used = Instant::now();
     }
@@ -336,8 +351,12 @@ fn decide(st: &State, loaded: &Loaded, peer: &Peer, sess: &Mutex<Sess>, tool: &s
         audit,
         decision: Some(d),
     };
-    if verdict != Verdict::Approve {
-        let counter = if verdict == Verdict::Allow { &st.stats.allow } else { &st.stats.deny };
+    if verdict != Verdict::Approve || client_asks {
+        let counter = match verdict {
+            Verdict::Allow => &st.stats.allow,
+            Verdict::Approve => &st.stats.approve,
+            Verdict::Deny => &st.stats.deny,
+        };
         counter.fetch_add(1, Ordering::Relaxed);
         return out;
     }
@@ -418,6 +437,7 @@ fn tool_call(
     args: &Value,
     kind: Kind,
     ticket: Option<String>,
+    ask: bool,
 ) -> Value {
     let loaded = st.policy();
     if let Some(t) = loaded.policy.tool(tool) {
@@ -432,9 +452,10 @@ fn tool_call(
             _ => {}
         }
     }
-    let o = decide(st, &loaded, peer, sess, tool, args);
+    let o = decide(st, &loaded, peer, sess, tool, args, ask);
     let mut r = reply(id, &o);
-    let Some(d) = o.decision.as_ref().filter(|_| o.verdict == Verdict::Allow) else {
+    let go = o.verdict == Verdict::Allow || (ask && o.verdict == Verdict::Approve);
+    let Some(d) = o.decision.as_ref().filter(|_| go) else {
         return r;
     };
     if kind == Kind::Check {
@@ -515,6 +536,7 @@ fn hello(
         st.log("hello", json!({ "agent": agent, "admitted": false, "reason": why, "peer": { "pid": peer.pid, "uid": peer.uid, "exe": peer.exe } }));
         return Err(json!({ "error": { "status": "identity", "message": why } }));
     }
+    let named = session.is_some();
     let name = session.unwrap_or_else(|| format!("c-{}", random_id()));
     if name.is_empty() || name.len() > 128 || name.chars().any(char::is_control) {
         return Err(proto::protocol_error(&Value::Null, "session names are 1 to 128 printable characters"));
@@ -522,7 +544,7 @@ fn hello(
     let mut all = lock(&st.sessions);
     all.retain(|_, s| {
         let s = lock(s);
-        s.connections > 0 || s.last_used.elapsed() < SESSION_IDLE
+        s.connections > 0 || (s.named && s.last_used.elapsed() < SESSION_IDLE)
     });
     let s = all
         .entry((agent.to_string(), name.clone()))
@@ -534,6 +556,7 @@ fn hello(
                 tickets: HashMap::new(),
                 last_used: Instant::now(),
                 connections: 0,
+                named,
             }))
         })
         .clone();
@@ -597,10 +620,10 @@ fn serve_agent(st: &State, stream: UnixStream) {
                 (proto::protocol_error(&id, "send hello first"), false)
             }
             (AgentReq::Call { id, tool, args }, Some(s)) => {
-                (tool_call(st, &peer, s, &id, &tool, &args, Kind::Call, None), false)
+                (tool_call(st, &peer, s, &id, &tool, &args, Kind::Call, None, false), false)
             }
-            (AgentReq::Check { id, tool, args, ticket }, Some(s)) => {
-                (tool_call(st, &peer, s, &id, &tool, &args, Kind::Check, ticket), false)
+            (AgentReq::Check { id, tool, args, ticket, ask }, Some(s)) => {
+                (tool_call(st, &peer, s, &id, &tool, &args, Kind::Check, ticket, ask), false)
             }
             (AgentReq::Result { id, ticket, ok, output }, Some(s)) => {
                 (tool_result(st, s, &id, &ticket, ok, output), false)

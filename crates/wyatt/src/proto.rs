@@ -3,7 +3,7 @@
 //! Agent socket:
 //!   {"op":"hello","agent":"ops","token":"...","session":"task-42"}
 //!   {"op":"call","id":1,"tool":"read_logs","args":{"path":"/var/log/app.log"}}
-//!   {"op":"check","id":2,"tool":"Bash","args":{...},"ticket":"toolu_01"}
+//!   {"op":"check","id":2,"tool":"Bash","args":{...},"ticket":"toolu_01","ask":true}
 //!   {"op":"result","ticket":"toolu_01","ok":true,"output":"..."}
 //!
 //! Control socket (owner only):
@@ -45,6 +45,9 @@ pub enum AgentReq {
         args: Value,
         #[serde(default)]
         ticket: Option<String>,
+        /// The client asks its own user when the verdict is approve.
+        #[serde(default)]
+        ask: bool,
     },
     Result {
         #[serde(default)]
