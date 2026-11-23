@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, bail};
 use serde_json::{Map, Value, json};
+use sha2::{Digest, Sha256};
 use wyatt_core::check::{self, Level};
 use wyatt_core::dlp::Findings;
 use wyatt_core::engine::{self, Code, Decision, Request, Verdict};
@@ -446,6 +447,14 @@ fn scrub(loaded: &Loaded, sess: &Mutex<Sess>, out: &mut Value) -> (Findings, BTr
     (f, s.state.labels.clone())
 }
 
+/// Size and SHA-256 of the output as the agent receives it, after DLP, so
+/// a copy kept elsewhere can be matched to its audit record. Hashing the
+/// redacted form keeps short secrets from being guessed from the log.
+fn digest(v: &Value) -> (usize, String) {
+    let text = serde_json::to_string(v).unwrap_or_default();
+    (text.len(), hex::encode(Sha256::digest(text.as_bytes())))
+}
+
 fn tool_call(st: &State, peer: &Peer, sess: &Mutex<Sess>, id: &Value, tool: &str, args: &Value, kind: Kind) -> Value {
     let loaded = st.policy();
     let ask = matches!(kind, Kind::Check { ask: true, .. });
@@ -497,10 +506,10 @@ fn tool_call(st: &State, peer: &Peer, sess: &Mutex<Sess>, id: &Value, tool: &str
     match result {
         Ok(mut v) => {
             let (found, labels) = scrub(&loaded, sess, &mut v);
-            let bytes = serde_json::to_string(&v).map(|s| s.len()).unwrap_or(0);
+            let (bytes, sha) = digest(&v);
             st.log(
                 "outcome",
-                json!({ "call": seq, "status": "ok", "elapsed_ms": elapsed, "bytes": bytes, "redacted": found }),
+                json!({ "call": seq, "status": "ok", "elapsed_ms": elapsed, "bytes": bytes, "output_sha256": sha, "redacted": found }),
             );
             r["result"] = v;
             r["labels"] = json!(labels);
@@ -525,9 +534,11 @@ fn tool_result(st: &State, sess: &Mutex<Sess>, id: &Value, ticket: &str, ok: boo
         return proto::protocol_error(id, format!("unknown or already used ticket `{ticket}`"));
     };
     let (found, labels) = scrub(&loaded, sess, &mut output);
+    let (bytes, sha) = digest(&output);
     st.log(
         "outcome",
-        json!({ "call": t.audit, "tool": t.tool, "status": if ok { "ok" } else { "error" }, "reported": true, "redacted": found }),
+        json!({ "call": t.audit, "tool": t.tool, "status": if ok { "ok" } else { "error" }, "reported": true,
+                "bytes": bytes, "output_sha256": sha, "redacted": found }),
     );
     let mut r = json!({ "id": id, "output": output, "labels": labels });
     if !found.is_empty() {
