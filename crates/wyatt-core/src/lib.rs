@@ -10,5 +10,9 @@ pub mod dlp;
 pub mod error;
 pub mod net;
 pub mod path;
+pub mod policy;
 pub mod session;
 pub mod units;
+
+pub use policy::{Policy, PolicyError, PolicyErrors};
+pub use session::{RateState, Session};
