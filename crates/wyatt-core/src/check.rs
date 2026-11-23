@@ -109,6 +109,25 @@ pub fn lint(p: &Policy) -> Vec<Diag> {
                 format!("rules[{i}] `{}`", r.id),
                 format!("never takes effect: rule `{}` denies every call it covers", d.id),
             );
+            continue;
+        }
+        // Approve beats allow, so an unconditional approve turns allows into prompts.
+        let prompt = p.rules.iter().find(|a| {
+            r.effect == Effect::Allow
+                && a.effect == Effect::Approve
+                && a.when.is_true()
+                && covers(Some(&a.tools), Some(&r.tools))
+                && covers(a.agents.as_ref(), r.agents.as_ref())
+        });
+        if let Some(a) = prompt {
+            out.push(
+                Level::Warning,
+                format!("rules[{i}] `{}`", r.id),
+                format!(
+                    "never allows on its own: rule `{}` asks for approval on every call it covers (approve beats allow; give `{}` a `not` condition)",
+                    a.id, a.id
+                ),
+            );
         }
     }
 
@@ -229,6 +248,7 @@ rules:
   - { id: everything, allow: "*" }
   - { id: lockdown, deny: run }
   - { id: typo-agent, allow: read, agents: opz }
+  - { id: ask-get, approve: get }
 "#,
         );
         for want in [
@@ -238,6 +258,7 @@ rules:
             "use `each` to require every element",
             "allows every tool for every agent",
             "never takes effect: rule `lockdown`",
+            "Warning rules[2] `lax-url`: never allows on its own: rule `ask-get`",
             "unknown agent `opz`",
             "agents.ghost: no uid",
             "tools.run: sandbox disabled",
