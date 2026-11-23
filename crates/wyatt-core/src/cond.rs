@@ -129,6 +129,39 @@ fn err(at: &str, msg: impl Into<String>) -> PolicyError {
     PolicyError { at: at.to_string(), msg: msg.into() }
 }
 
+const DAYS: [&str; 7] = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+
+/// Time fields are numbers (hour 0..=23, weekday 0..=6 from Monday). Day
+/// names become numbers here, and anything else that cannot match is an
+/// error: a string compared with a number would silently never hold.
+fn time_value(field: &str, v: &Value, at: &str) -> Result<Value, PolicyError> {
+    let weekday = field == "time.weekday";
+    let max = if weekday { 6 } else { 23 };
+    match v {
+        Value::Array(a) => a.iter().map(|x| time_value(field, x, at)).collect::<Result<_, _>>().map(Value::Array),
+        Value::Object(m) => {
+            let mut out = serde_json::Map::new();
+            for (k, x) in m {
+                let x = if k == "exists" { x.clone() } else { time_value(field, x, &format!("{at}.{k}"))? };
+                out.insert(k.clone(), x);
+            }
+            Ok(Value::Object(out))
+        }
+        Value::String(s) if weekday => {
+            let s = s.to_ascii_lowercase();
+            DAYS.iter()
+                .position(|d| s == *d || s == d[..3])
+                .map(Value::from)
+                .ok_or_else(|| err(at, format!("`{s}` is not a weekday; use mon..sun, or 0..6 with 0 for Monday")))
+        }
+        Value::Number(n) if n.as_u64().is_some_and(|n| n <= max) => Ok(v.clone()),
+        _ => Err(err(
+            at,
+            format!("{field} takes whole numbers 0..={max}{}", if weekday { " or day names" } else { " (UTC)" }),
+        )),
+    }
+}
+
 pub fn compile(v: &Value, at: &str) -> Result<Cond, PolicyError> {
     let Value::Object(map) = v else {
         return Err(err(at, "a condition must be a map of field: test"));
@@ -154,7 +187,11 @@ pub fn compile(v: &Value, at: &str) -> Result<Cond, PolicyError> {
             "not" => Cond::Not(Box::new(compile(val, &here)?)),
             field => {
                 check_field(field, &here)?;
-                Cond::Field { path: field.to_string(), ops: compile_ops(val, &here)? }
+                let val = match field {
+                    "time.hour" | "time.weekday" => Cow::Owned(time_value(field, val, &here)?),
+                    _ => Cow::Borrowed(val),
+                };
+                Cond::Field { path: field.to_string(), ops: compile_ops(&val, &here)? }
             }
         };
         all.push(c);
@@ -468,5 +505,19 @@ mod tests {
         ] {
             assert!(compile(&bad, "when").is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn time_fields_take_day_names_and_reject_what_cannot_match() {
+        let c = |v: Value| compile(&v, "when");
+        let workdays = c(json!({"time.weekday": ["mon", "Tue", "wednesday", 3, "fri"]})).unwrap();
+        assert!(workdays.eval(&facts(json!({"time.weekday": 0}))));
+        assert!(!workdays.eval(&facts(json!({"time.weekday": 5}))));
+        let hours = c(json!({"time.hour": {"ge": 9, "lt": 17}})).unwrap();
+        assert!(hours.eval(&facts(json!({"time.hour": 9}))) && !hours.eval(&facts(json!({"time.hour": 17}))));
+        let msg = |v: Value| c(v).unwrap_err().msg;
+        assert!(msg(json!({"time.weekday": "funday"})).contains("not a weekday"));
+        assert!(msg(json!({"time.hour": {"lt": 24}})).contains("0..=23"));
+        assert!(msg(json!({"time.hour": "9"})).contains("whole numbers"));
     }
 }
