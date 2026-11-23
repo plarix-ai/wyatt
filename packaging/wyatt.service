@@ -1,14 +1,19 @@
 # Runs the daemon as its own user. Agents reach /run/wyatt/agent.sock by
-# being members of the wyatt group; the control socket and the audit key
-# stay private to the wyatt user (and root).
+# being members of the wyatt group. Operators reach the control socket by
+# being members of wyatt-ops; approvals are made in their names, which is
+# what a rule's `approvers` list matches. Never put an agent in wyatt-ops.
+# The audit key stays private to the wyatt user.
 #
 #   sudo useradd --system --no-create-home --shell /usr/sbin/nologin wyatt
+#   sudo groupadd --system wyatt-ops
 #   sudo usermod -aG wyatt <agent user>
+#   sudo usermod -aG wyatt-ops <operator>
 #   sudo install -D -m 0644 wyatt.yaml /etc/wyatt/wyatt.yaml
 #   sudo install -m 0644 packaging/wyatt.service /etc/systemd/system/
 #   sudo systemctl enable --now wyatt
 #
-# Operators: sudo wyatt --control /run/wyatt/control.sock status
+# Operators: export WYATT_CONTROL=/run/wyatt/control.sock, then wyatt status,
+# wyatt approvals, wyatt approve <id>.
 
 [Unit]
 Description=Wyatt runtime policy enforcement for AI agents
@@ -20,14 +25,16 @@ Wants=network-online.target
 Type=simple
 User=wyatt
 Group=wyatt
-ExecStart=/usr/local/bin/wyatt serve --policy /etc/wyatt/wyatt.yaml --socket /run/wyatt/agent.sock --control /run/wyatt/control.sock --state /var/lib/wyatt
+SupplementaryGroups=wyatt-ops
+ExecStart=/usr/local/bin/wyatt serve --policy /etc/wyatt/wyatt.yaml --socket /run/wyatt/agent.sock --control /run/wyatt/control.sock --control-group wyatt-ops --state /var/lib/wyatt
 ExecReload=/usr/local/bin/wyatt reload --control /run/wyatt/control.sock
 Restart=on-failure
 # Secrets for ${env:NAME} in the policy, readable by root only.
 EnvironmentFile=-/etc/wyatt/env
 
 RuntimeDirectory=wyatt
-RuntimeDirectoryMode=0750
+# Others may pass through to the sockets, whose own modes decide access.
+RuntimeDirectoryMode=0751
 StateDirectory=wyatt
 StateDirectoryMode=0700
 UMask=0077
@@ -54,6 +61,9 @@ LockPersonality=yes
 # left out because it breaks JIT runtimes such as node; add it if no tool
 # needs one. Add AF_NETLINK here if a tool runs commands such as `ip`.
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# Caps processes across the daemon and every tool it runs, including any
+# that left their process group with setsid.
+TasksMax=512
 CapabilityBoundingSet=
 AmbientCapabilities=
 
