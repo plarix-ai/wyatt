@@ -1,0 +1,35 @@
+# Policy for run.py. {{...}} fields are filled in at run time.
+version: 1
+name: attack-suite
+
+defaults:
+  timeout: 3s
+  max_output: 64KiB
+  approval_timeout: 1s
+
+agents:
+  bot: {{ uid: {uid} }}
+  admin: {{ uid: {other_uid}, labels: [admin] }}
+  ci: {{ token_sha256: "{token_sha256}" }}
+
+tools:
+  read: {{ driver: fs.read, root: "{root}" }}
+  echo: {{ driver: proc, command: ["{echo}"] }}
+  cat: {{ driver: proc, command: ["{cat}"], sandbox: {{ read: ["{root}"] }} }}
+  flood: {{ driver: proc, command: ["{yes}"], timeout: 2s }}
+  sleep: {{ driver: proc, command: ["{sleep}", "30"], timeout: 60s }}
+  post: {{ driver: http, method: post, hosts: [api.example.com] }}
+  fetch: {{ driver: http, method: get, hosts: ["*"] }}
+  deploy: {{ driver: delegate, args: {{ env: string }} }}
+
+rules:
+  - {{ id: read, allow: read, agents: [bot, ci] }}
+  - {{ id: tools, allow: [echo, flood, sleep, post, fetch], agents: bot }}
+  # Deliberately careless: any argument at all. The sandbox still holds.
+  - {{ id: cat-anything, allow: cat, agents: bot }}
+  - id: no-exfil
+    deny: [post, fetch]
+    when: {{ session.labels: {{ contains: secret }} }}
+    reason: this session has read a secret
+  - {{ id: deploy, approve: deploy }}
+  - {{ id: admin, allow: "*", agents: admin }}
