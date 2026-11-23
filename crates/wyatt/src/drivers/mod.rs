@@ -2,6 +2,7 @@
 //! arguments from the decision, never the raw request.
 
 pub mod fs;
+pub mod http;
 pub mod landlock;
 pub mod proc;
 
@@ -74,7 +75,7 @@ pub fn run(tool: &Tool, args: &Value, secrets: &Secrets, spawned: &dyn Fn(i32)) 
         Driver::FsList => fs::list(tool, args),
         Driver::FsWrite => fs::write(tool, args),
         Driver::Proc => proc::run(tool, args, secrets, spawned),
-        Driver::Http => Err(Failure::Refused("the http driver is not built yet".into())),
+        Driver::Http => http::run(tool, args, secrets, spawned),
         Driver::Delegate | Driver::Mcp => {
             Err(Failure::Refused(format!("`{}` runs outside the daemon; use check and result", tool.name)))
         }
