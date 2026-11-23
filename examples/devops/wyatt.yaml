@@ -1,0 +1,109 @@
+# An on-call assistant: reads application logs, inspects the cluster,
+# checks the status page and posts to the incident channel. Restarts and
+# deploys wait for a human.
+#
+# Set the uid (and exe, if the agent runs from a fixed binary) to match
+# the account the agent runs under. `wyatt check` lints this file and
+# `wyatt test tests.yaml` runs the cases next to it.
+version: 1
+name: devops-oncall
+
+defaults:
+  timeout: 20s
+  max_output: 512KiB
+  approval_timeout: 15m
+
+agents:
+  oncall:
+    uid: 990
+    labels: [team.sre]
+
+tools:
+  read_log:
+    driver: fs.read
+    root: /var/log/app
+    description: Read one application log file.
+  list_logs:
+    driver: fs.list
+    root: /var/log/app
+  kubectl_get:
+    driver: proc
+    command: [/usr/local/bin/kubectl, get, --request-timeout=10s]
+    description: kubectl get with extra arguments, such as [pods, -n, payments].
+    sandbox:
+      read: [/etc/oncall/kubeconfig]
+      net: true
+      memory: 512MiB
+      cpu: 20s
+    env:
+      KUBECONFIG: /etc/oncall/kubeconfig
+  status:
+    driver: http
+    method: get
+    hosts: [status.internal.example.com]
+  post_incident:
+    driver: http
+    method: post
+    hosts: [hooks.slack.com]
+  restart_service:
+    driver: delegate
+    description: Rolling restart of one deployment, run by the agent's own code.
+    args: { namespace: string, deployment: string }
+  deploy:
+    driver: delegate
+    args: { service: string, version: string }
+
+rules:
+  - id: logs
+    allow: [read_log, list_logs]
+    when: { args.path: { glob: "/var/log/app/**" } }
+
+  - id: kubectl-read
+    allow: kubectl_get
+    when:
+      args.args: { each: { regex: '^[A-Za-z0-9./:=_-]+$' } }
+
+  - id: kubectl-no-credentials
+    deny: kubectl_get
+    when:
+      args.args: { regex: '^--(kubeconfig|token|as|as-group|server|certificate-authority|client-key)' }
+    reason: credential and identity flags are set by the policy, not the agent
+
+  - id: kubectl-no-secrets
+    deny: kubectl_get
+    when: { args.args: { regex: '^(secrets?|secret/.*)$' } }
+    reason: the agent does not read Kubernetes secrets
+
+  - id: status-page
+    allow: status
+
+  - id: incident-channel
+    allow: post_incident
+    when: { args.url.path: { prefix: /services/T0001/B0002/ } }
+
+  - id: no-exfil
+    deny: post_incident
+    when: { session.labels: { contains: secret } }
+    reason: this session has read a secret, so it cannot post outside
+
+  - id: restart
+    approve: restart_service
+    when: { args.namespace: { ne: kube-system } }
+    approvers: [alice, bob]
+    reason: restarts page the service owner
+
+  - id: deploy-business-hours
+    approve: deploy
+    when:
+      time.weekday: [mon, tue, wed, thu, fri]
+      time.hour: { ge: 9, lt: 17 }
+    approvers: [alice]
+
+limits:
+  - { id: overall, agents: oncall, rate: 120/min, max_calls: 2000 }
+  - { id: cluster, tools: kubectl_get, rate: 20/min }
+  - { id: posts, tools: post_incident, rate: 6/min }
+
+redact:
+  patterns:
+    - { name: internal_token, regex: 'itk_[A-Za-z0-9]{32}' }

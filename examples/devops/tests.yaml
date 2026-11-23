@@ -1,0 +1,135 @@
+# Run with: wyatt test devops/tests.yaml
+policy: wyatt.yaml
+tests:
+  - name: reads an application log
+    agent: oncall
+    tool: read_log
+    args: { path: /var/log/app/api.log }
+    expect: allow
+    rule: logs
+
+  - name: dot-dot cannot leave the log root
+    agent: oncall
+    tool: read_log
+    args: { path: /var/log/app/../../../etc/shadow }
+    expect: deny
+    code: path_escape
+
+  - name: kubectl get pods in one namespace
+    agent: oncall
+    tool: kubectl_get
+    args: { args: [pods, -n, payments, -o, wide] }
+    expect: allow
+    rule: kubectl-read
+
+  - name: kubectl cannot swap in another identity
+    agent: oncall
+    tool: kubectl_get
+    args: { args: [pods, --token=eyJhbGciOi] }
+    expect: deny
+    rule: kubectl-no-credentials
+
+  - name: kubectl cannot read secrets
+    agent: oncall
+    tool: kubectl_get
+    args: { args: [secret/db-creds, -o, yaml] }
+    expect: deny
+    rule: kubectl-no-secrets
+
+  - name: shell syntax in an argument matches no rule
+    agent: oncall
+    tool: kubectl_get
+    args: { args: ["pods;", curl, evil.test] }
+    expect: deny
+    code: no_rule
+
+  - name: posts to the incident channel
+    agent: oncall
+    tool: post_incident
+    args: { url: "https://hooks.slack.com/services/T0001/B0002/xyz", body: '{"text":"api p99 is up"}' }
+    expect: allow
+    rule: incident-channel
+
+  - name: another Slack webhook is not the incident channel
+    agent: oncall
+    tool: post_incident
+    args: { url: "https://hooks.slack.com/services/T9999/B0002/xyz", body: "{}" }
+    expect: deny
+    code: no_rule
+
+  - name: a host outside the allowlist is egress
+    agent: oncall
+    tool: post_incident
+    args: { url: "https://paste.evil.test/upload", body: "{}" }
+    expect: deny
+    code: egress
+
+  - name: after a log shows a secret, posting out is blocked
+    agent: oncall
+    before:
+      - tool: read_log
+        args: { path: /var/log/app/boot.log }
+        output: { content: "loaded AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" }
+    tool: post_incident
+    args: { url: "https://hooks.slack.com/services/T0001/B0002/xyz", body: "{}" }
+    expect: deny
+    rule: no-exfil
+
+  - name: the status page has no metadata endpoint behind it
+    agent: oncall
+    tool: status
+    args: { url: "http://169.254.169.254/latest/meta-data/" }
+    expect: deny
+    code: egress
+
+  - name: restarts wait for an approver
+    agent: oncall
+    tool: restart_service
+    args: { namespace: payments, deployment: api }
+    expect: approve
+    rule: restart
+
+  - name: kube-system is not restarted at all
+    agent: oncall
+    tool: restart_service
+    args: { namespace: kube-system, deployment: coredns }
+    expect: deny
+    code: no_rule
+
+  - name: deploys on a Tuesday morning wait for an approver
+    agent: oncall
+    tool: deploy
+    args: { service: api, version: 2.14.0 }
+    now: "2026-11-24T10:00:00Z"
+    expect: approve
+    rule: deploy-business-hours
+
+  - name: no deploys on a Saturday
+    agent: oncall
+    tool: deploy
+    args: { service: api, version: 2.14.0 }
+    now: "2026-11-28T10:00:00Z"
+    expect: deny
+    code: no_rule
+
+  - name: no deploys after five
+    agent: oncall
+    tool: deploy
+    args: { service: api, version: 2.14.0 }
+    now: "2026-11-24T17:00:00Z"
+    expect: deny
+
+  - name: a long session hits its call budget
+    agent: oncall
+    session: { limits: { overall: 2000 } }
+    tool: read_log
+    args: { path: /var/log/app/api.log }
+    expect: deny
+    code: call_limit
+
+  - name: an agent the policy does not name gets nothing
+    agent: intern
+    tool: read_log
+    args: { path: /var/log/app/api.log }
+    expect: deny
+    code: unknown_agent
