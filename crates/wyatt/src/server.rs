@@ -41,6 +41,7 @@ pub struct Config {
     pub control: PathBuf,
     pub state_dir: PathBuf,
     pub socket_mode: u32,
+    pub control_group: Option<String>,
 }
 
 pub struct Loaded {
@@ -838,6 +839,20 @@ fn serve_control(st: &State, stream: UnixStream) {
     }
 }
 
+/// Hands the control socket to `group` with mode 660. The daemon's user must
+/// be a member of the group.
+fn share_with_group(path: &Path, group: &str) -> anyhow::Result<()> {
+    let gid = peer::group_id(group).with_context(|| format!("no group named `{group}`"))?;
+    let c = std::ffi::CString::new(path.as_os_str().as_encoded_bytes())?;
+    // SAFETY: `c` is a valid NUL-terminated path; uid -1 leaves the owner alone.
+    if unsafe { libc::chown(c.as_ptr(), u32::MAX, gid) } != 0 {
+        let e = std::io::Error::last_os_error();
+        bail!("giving {} to group `{group}`: {e} (is the daemon's user a member?)", path.display());
+    }
+    fs::set_permissions(path, fs::Permissions::from_mode(0o660))?;
+    Ok(())
+}
+
 fn bind(path: &Path, mode: u32) -> anyhow::Result<UnixListener> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
@@ -900,6 +915,9 @@ pub fn serve(mut cfg: Config) -> anyhow::Result<()> {
         Audit::open(&cfg.state_dir).with_context(|| format!("opening audit log in {}", cfg.state_dir.display()))?;
     let agents = bind(&cfg.socket, cfg.socket_mode)?;
     let controls = bind(&cfg.control, 0o600)?;
+    if let Some(group) = &cfg.control_group {
+        share_with_group(&cfg.control, group)?;
+    }
     let p = &loaded.policy;
     eprintln!(
         "wyatt {}: policy {} ({}, {} tools, {} rules, {})",

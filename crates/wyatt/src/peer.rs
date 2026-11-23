@@ -58,6 +58,17 @@ pub fn identify(s: &UnixStream) -> io::Result<Peer> {
     Ok(Peer { pid: cred.pid, uid: cred.uid, gid: cred.gid, exe })
 }
 
+pub fn group_id(name: &str) -> Option<u32> {
+    let name = std::ffi::CString::new(name).ok()?;
+    let mut buf = vec![0u8; 16384];
+    // SAFETY: zeroed group is a valid out-parameter for getgrnam_r.
+    let mut gr: libc::group = unsafe { std::mem::zeroed() };
+    let mut out: *mut libc::group = std::ptr::null_mut();
+    // SAFETY: all pointers are valid for the given sizes.
+    let r = unsafe { libc::getgrnam_r(name.as_ptr(), &mut gr, buf.as_mut_ptr().cast(), buf.len(), &mut out) };
+    (r == 0 && !out.is_null()).then_some(gr.gr_gid)
+}
+
 pub fn username(uid: u32) -> String {
     let mut buf = vec![0u8; 4096];
     // SAFETY: zeroed passwd is a valid out-parameter for getpwuid_r.

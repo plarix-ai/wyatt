@@ -155,6 +155,11 @@ enum Cmd {
         /// against the policy's identity bindings.
         #[arg(long, default_value = "660", value_parser = octal)]
         socket_mode: u32,
+        /// Let members of this group use the control socket. Approvals are
+        /// made in the name of the user who connects, so approvers named in
+        /// the policy need this. Never use a group agents belong to.
+        #[arg(long)]
+        control_group: Option<String>,
     },
     /// Show what the running daemon is doing.
     Status {
@@ -317,12 +322,13 @@ fn main() -> ExitCode {
                 AuditCmd::Show { seq } => ok(cmd::audit::show(&state, seq)),
             }
         }
-        Cmd::Serve { policy, socket, control, state, socket_mode } => server::serve(server::Config {
+        Cmd::Serve { policy, socket, control, state, socket_mode, control_group } => server::serve(server::Config {
             policy: policy.unwrap_or_else(paths::policy),
             socket: socket.unwrap_or_else(paths::agent_socket),
             control: control.unwrap_or_else(paths::control_socket),
             state_dir: state.unwrap_or_else(paths::state_dir),
             socket_mode,
+            control_group,
         })
         .map(|()| ExitCode::SUCCESS),
         Cmd::Status { json } => ok(cmd::ops::status(&control, json)),
