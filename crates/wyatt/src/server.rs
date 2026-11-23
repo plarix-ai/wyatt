@@ -72,6 +72,9 @@ struct Ticket {
     created: Instant,
 }
 
+/// Live sessions keyed by (agent, session name).
+type Sessions = HashMap<(String, String), Arc<Mutex<Sess>>>;
+
 struct Sess {
     id: String,
     agent: String,
@@ -114,7 +117,7 @@ struct State {
     loaded: RwLock<Arc<Loaded>>,
     audit: Audit,
     rates: Mutex<RateState>,
-    sessions: Mutex<HashMap<(String, String), Arc<Mutex<Sess>>>>,
+    sessions: Mutex<Sessions>,
     approvals: Mutex<BTreeMap<u64, Pending>>,
     approval_cv: Condvar,
     frozen: Mutex<Option<String>>,
@@ -223,10 +226,16 @@ fn tools_for(p: &Policy, agent: &str) -> Vec<Value> {
         .collect()
 }
 
-#[derive(Clone, Copy, PartialEq)]
+/// How the agent asked: `call` runs the tool here, `check` only decides
+/// and hands back a ticket for the result.
 enum Kind {
     Call,
-    Check,
+    Check {
+        ticket: Option<String>,
+        /// The client can ask its user, so an approve verdict is passed on
+        /// instead of waiting for an approver.
+        ask: bool,
+    },
 }
 
 struct Outcome {
@@ -428,27 +437,20 @@ fn scrub(loaded: &Loaded, sess: &Mutex<Sess>, out: &mut Value) -> (Findings, BTr
     (f, s.state.labels.clone())
 }
 
-fn tool_call(
-    st: &State,
-    peer: &Peer,
-    sess: &Mutex<Sess>,
-    id: &Value,
-    tool: &str,
-    args: &Value,
-    kind: Kind,
-    ticket: Option<String>,
-    ask: bool,
-) -> Value {
+fn tool_call(st: &State, peer: &Peer, sess: &Mutex<Sess>, id: &Value, tool: &str, args: &Value, kind: Kind) -> Value {
     let loaded = st.policy();
+    let ask = matches!(kind, Kind::Check { ask: true, .. });
     if let Some(t) = loaded.policy.tool(tool) {
-        match (kind, t.driver.is_mediated()) {
+        match (&kind, t.driver.is_mediated()) {
             (Kind::Call, false) => {
                 return proto::protocol_error(
                     id,
                     format!("`{tool}` runs in the agent: send check, run it, then send result"),
                 );
             }
-            (Kind::Check, true) => return proto::protocol_error(id, format!("`{tool}` runs inside wyatt: send call")),
+            (Kind::Check { .. }, true) => {
+                return proto::protocol_error(id, format!("`{tool}` runs inside wyatt: send call"));
+            }
             _ => {}
         }
     }
@@ -458,7 +460,7 @@ fn tool_call(
     let Some(d) = o.decision.as_ref().filter(|_| go) else {
         return r;
     };
-    if kind == Kind::Check {
+    if let Kind::Check { ticket, .. } = kind {
         let ticket = ticket.unwrap_or_else(random_id);
         let mut s = lock(sess);
         s.tickets.retain(|_, t| t.created.elapsed() < TICKET_TTL);
@@ -666,10 +668,10 @@ fn serve_agent(st: &State, stream: UnixStream) {
                 None,
             ) => (proto::protocol_error(&id, "send hello first"), false),
             (AgentReq::Call { id, tool, args }, Some(s)) => {
-                (tool_call(st, &peer, s, &id, &tool, &args, Kind::Call, None, false), false)
+                (tool_call(st, &peer, s, &id, &tool, &args, Kind::Call), false)
             }
             (AgentReq::Check { id, tool, args, ticket, ask }, Some(s)) => {
-                (tool_call(st, &peer, s, &id, &tool, &args, Kind::Check, ticket, ask), false)
+                (tool_call(st, &peer, s, &id, &tool, &args, Kind::Check { ticket, ask }), false)
             }
             (AgentReq::Result { id, ticket, ok, output }, Some(s)) => {
                 (tool_result(st, s, &id, &ticket, ok, output), false)

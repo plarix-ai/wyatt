@@ -296,33 +296,6 @@ impl Gate {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn pins_survive_a_restart() {
-        let dir = std::env::temp_dir().join(format!("wyatt-pins-{}", std::process::id()));
-        let mut p = Pins::load(&dir, "gh").unwrap();
-        assert!(p.map.is_empty());
-        p.map.insert("create_issue".into(), "ab".repeat(32));
-        p.save().unwrap();
-        let q = Pins::load(&dir, "gh").unwrap();
-        assert_eq!(q.map.get("create_issue").map(String::len), Some(64));
-        assert!(dir.join("mcp-pins/gh.json").exists());
-        fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
-    fn denied_calls_come_back_as_tool_errors() {
-        let e = tool_error(&json!(7), "no".into());
-        assert_eq!(e["id"], 7);
-        assert_eq!(e["result"]["isError"], true);
-        assert_eq!(e["result"]["content"][0]["text"], "no");
-        assert!(e.get("error").is_none(), "a JSON-RPC error would read as a broken server, not a refusal");
-    }
-}
-
 fn spawn(cmd: &[String]) -> anyhow::Result<Child> {
     let (prog, args) = cmd.split_first().context("no server command given after --")?;
     Command::new(prog)
@@ -525,4 +498,31 @@ pub fn scan(server: &str, command: &[String], as_json: bool) -> anyhow::Result<b
         if blocked == 0 { green("no poisoned tools found") } else { red(&format!("{blocked} tools would be hidden")) }
     );
     Ok(blocked == 0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pins_survive_a_restart() {
+        let dir = std::env::temp_dir().join(format!("wyatt-pins-{}", std::process::id()));
+        let mut p = Pins::load(&dir, "gh").unwrap();
+        assert!(p.map.is_empty());
+        p.map.insert("create_issue".into(), "ab".repeat(32));
+        p.save().unwrap();
+        let q = Pins::load(&dir, "gh").unwrap();
+        assert_eq!(q.map.get("create_issue").map(String::len), Some(64));
+        assert!(dir.join("mcp-pins/gh.json").exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn denied_calls_come_back_as_tool_errors() {
+        let e = tool_error(&json!(7), "no".into());
+        assert_eq!(e["id"], 7);
+        assert_eq!(e["result"]["isError"], true);
+        assert_eq!(e["result"]["content"][0]["text"], "no");
+        assert!(e.get("error").is_none(), "a JSON-RPC error would read as a broken server, not a refusal");
+    }
 }

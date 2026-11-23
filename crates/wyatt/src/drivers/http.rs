@@ -293,9 +293,7 @@ mod tests {
             (&s).write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok").unwrap();
             (seen, body)
         });
-        let src = format!(
-            "version: 1\ntools:\n  t: {{ driver: http, method: post, hosts: ['127.0.0.1'], allow_private: true, headers: {{ X-Key: s3cret }} }}\n"
-        );
+        let src = "version: 1\ntools:\n  t: { driver: http, method: post, hosts: ['127.0.0.1'], allow_private: true, headers: { X-Key: s3cret } }\n".to_string();
         let p = wyatt_core::Policy::from_yaml(&src).unwrap();
         let tool = &p.tools["t"];
         let secrets = super::super::resolve(tool).unwrap();
