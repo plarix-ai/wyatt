@@ -17,8 +17,8 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-langchain = ["langchain-core>=0.3"]
-openai-agents = ["openai-agents>=0.4"]
+langchain = ["langchain-core>=1.0"]
+openai-agents = ["openai-agents>=0.25"]
 
 [project.urls]
 Source = "https://github.com/plarix-ai/wyatt"
@@ -29,4 +29,4 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-filterwarnings = ["ignore::DeprecationWarning:langsmith.*"]
+filterwarnings = ["ignore::DeprecationWarning:langsmith.*", "ignore::DeprecationWarning:agents.*"]
