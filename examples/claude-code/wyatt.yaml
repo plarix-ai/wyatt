@@ -1,0 +1,144 @@
+# Wyatt as the permission layer for Claude Code, through the hook:
+#
+#   wyatt hook claude-code --print-settings >> .claude/settings.json
+#   wyatt serve -p examples/claude-code/wyatt.yaml
+#
+# allow runs without a prompt (with --auto-allow) or falls back to Claude
+# Code's own rules, approve becomes Claude Code's "ask", and deny blocks the
+# call with the reason shown to the model. Tools missing from this file are
+# denied, so a new Claude Code tool stays off until someone adds it here.
+#
+# Replace /home/dev/project with the repository Claude Code works in, and
+# the uid with the account that runs it.
+version: 1
+name: claude-code
+
+agents:
+  claude-code: { uid: 1000 }
+
+tools:
+  Read: { driver: delegate, args: { file_path: path, "*": any } }
+  Write: { driver: delegate, args: { file_path: path, content: string, "*": any } }
+  Edit: { driver: delegate, args: { file_path: path, "*": any } }
+  NotebookEdit: { driver: delegate, args: { notebook_path: path, "*": any } }
+  Glob: { driver: delegate, args: { pattern: string, path: "path?", "*": any } }
+  Grep: { driver: delegate, args: { pattern: string, path: "path?", "*": any } }
+  Bash: { driver: delegate, args: { command: string, "*": any } }
+  WebFetch: { driver: delegate, args: { url: url, "*": any } }
+  WebSearch: { driver: delegate, args: { query: string, "*": any } }
+  TodoWrite: { driver: delegate, args: { todos: list } }
+  # The subagent tool; older Claude Code versions call it Task.
+  Agent: { driver: delegate, args: { prompt: string, "*": any } }
+  Task: { driver: delegate, args: { prompt: string, "*": any } }
+  # Every tool of the GitHub MCP server, named the way Claude Code names them.
+  mcp__github__*: { driver: mcp, args: { "*": any } }
+
+rules:
+  # Files: the project, minus credentials and git internals.
+  - id: read-project
+    allow: [Read, NotebookEdit]
+    when:
+      any:
+        - args.file_path: { glob: "/home/dev/project/**" }
+        - args.notebook_path: { glob: "/home/dev/project/**" }
+
+  - id: search-project
+    allow: [Glob, Grep]
+    when:
+      any:
+        - args.path: { exists: false }
+        - args.path: { glob: ["/home/dev/project", "/home/dev/project/**"] }
+
+  - id: edit-project
+    allow: [Write, Edit]
+    when: { args.file_path: { glob: "/home/dev/project/**" } }
+
+  - id: no-credentials
+    deny: [Read, Write, Edit]
+    when:
+      args.file_path:
+        glob: ["**/.env", "**/.env.*", "**/.ssh/**", "**/.aws/**", "**/*.pem", "**/*.key", "**/.netrc"]
+    reason: credential files stay out of the model's context
+
+  - id: no-git-internals
+    deny: [Write, Edit]
+    when: { args.file_path: { glob: "**/.git/**" } }
+    reason: use git commands, not edits, to change the repository
+
+  # Shell: a short list runs as is, anything else asks, a few things never
+  # run. The list excludes every character that chains or substitutes
+  # commands, newlines included. Builds and tests still run the project's
+  # own code, so this is only as safe as the repository.
+  #
+  # Approve beats allow, so the ask rule excludes the list; the YAML anchor
+  # keeps it in one place.
+  - id: shell-routine
+    allow: Bash
+    when: &routine-shell
+      args.command:
+        regex: '^(git (status|diff|log|show|branch)|ls|pwd|cargo (build|check|test|clippy|fmt)|pytest|npm (test|run (lint|build)))( [^;&|`$<>(){}\\\n\r]*)?$'
+
+  - id: shell-ask
+    approve: Bash
+    when:
+      any:
+        - not: *routine-shell
+        # git diff and git log can write files with --output.
+        - args.command: { regex: '--output' }
+
+  - id: shell-never
+    deny: Bash
+    when:
+      any:
+        - args.command: { regex: '\brm\s+-[a-zA-Z]*[rf]' }
+        - args.command: { regex: '\bgit\s+push\b.*(--force|-f\b)' }
+        - args.command: { regex: '\b(curl|wget)\b[^|]*\|\s*(ba|z)?sh\b' }
+        - args.command: { regex: '(^|[;&|]\s*)sudo\b' }
+    reason: destructive or privilege-raising command
+
+  # Network: documentation hosts freely, other pages after a prompt, nothing
+  # at all once the session has seen a secret.
+  - id: fetch-docs
+    allow: WebFetch
+    when: &docs
+      args.url.host: { glob: ["docs.rs", "*.github.com", "github.com", "developer.mozilla.org", "docs.python.org"] }
+
+  - id: fetch-ask
+    approve: WebFetch
+    when: { not: *docs }
+
+  - id: search
+    allow: WebSearch
+
+  - id: no-exfil
+    deny: [WebFetch, WebSearch, "mcp__github__*"]
+    when: { session.labels: { contains: secret } }
+    reason: this session has seen a secret, so nothing leaves the machine
+
+  - id: no-exfil-shell
+    deny: Bash
+    when:
+      session.labels: { contains: secret }
+      args.command: { regex: '\b(curl|wget|nc|ncat|ssh|scp|rsync)\b' }
+    reason: this session has seen a secret, so nothing leaves the machine
+
+  - id: bookkeeping
+    allow: [TodoWrite, Agent, Task]
+
+  # GitHub over MCP: read freely, ask before writing, never delete.
+  - id: github-read
+    allow: "mcp__github__*"
+    when: { tool: { glob: ["mcp__github__get_*", "mcp__github__list_*", "mcp__github__search_*"] } }
+
+  - id: github-write
+    approve: "mcp__github__*"
+    when: { tool: { glob: ["mcp__github__create_*", "mcp__github__update_*", "mcp__github__add_*"] } }
+
+  - id: github-no-delete
+    deny: "mcp__github__*"
+    when: { tool: { glob: "mcp__github__delete_*" } }
+    reason: deletions on GitHub are done by people
+
+limits:
+  - { id: shell-rate, tools: Bash, rate: 30/min }
+  - { id: fetch-rate, tools: [WebFetch, WebSearch], rate: 20/min }
