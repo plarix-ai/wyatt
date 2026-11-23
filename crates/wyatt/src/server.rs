@@ -774,8 +774,10 @@ fn block_signals() -> libc::sigset_t {
     }
 }
 
-pub fn serve(cfg: Config) -> anyhow::Result<()> {
+pub fn serve(mut cfg: Config) -> anyhow::Result<()> {
     let signals = block_signals();
+    // Reload reads this path later, maybe from another working directory.
+    cfg.policy = fs::canonicalize(&cfg.policy).with_context(|| format!("policy {}", cfg.policy.display()))?;
     let loaded = load(&cfg.policy)?;
     let audit =
         Audit::open(&cfg.state_dir).with_context(|| format!("opening audit log in {}", cfg.state_dir.display()))?;

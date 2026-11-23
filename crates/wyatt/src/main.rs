@@ -1,10 +1,13 @@
 mod audit;
+mod client;
 mod clock;
+mod cmd;
 mod drivers;
 mod paths;
 mod peer;
 mod proto;
 mod server;
+mod term;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -19,6 +22,9 @@ use clap::{Parser, Subcommand};
 #[derive(Parser)]
 #[command(name = "wyatt", version, max_term_width = 100)]
 struct Cli {
+    /// Control socket of the daemon [env: WYATT_CONTROL]
+    #[arg(long, global = true, value_name = "PATH")]
+    control: Option<PathBuf>,
     #[command(subcommand)]
     cmd: Cmd,
 }
@@ -44,6 +50,39 @@ enum Cmd {
         #[arg(long, default_value = "660", value_parser = octal)]
         socket_mode: u32,
     },
+    /// Show what the running daemon is doing.
+    Status {
+        #[arg(long)]
+        json: bool,
+    },
+    /// List sessions with their labels and call counts.
+    Sessions {
+        #[arg(long)]
+        json: bool,
+    },
+    /// List calls waiting for a human.
+    Approvals {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Let a waiting call run.
+    Approve { id: u64 },
+    /// Refuse a waiting call.
+    Deny {
+        id: u64,
+        #[arg(long)]
+        reason: Option<String>,
+    },
+    /// Kill switch: deny every call and kill running tools until unfrozen.
+    Freeze {
+        #[arg(long)]
+        reason: Option<String>,
+    },
+    /// Lift the kill switch.
+    Unfreeze,
+    /// Load the policy file again. A file with errors is refused and the
+    /// current policy stays.
+    Reload,
 }
 
 fn octal(s: &str) -> Result<u32, String> {
@@ -52,6 +91,7 @@ fn octal(s: &str) -> Result<u32, String> {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    let control = cli.control.unwrap_or_else(paths::control_socket);
     let res = match cli.cmd {
         Cmd::Serve { policy, socket, control, state, socket_mode } => server::serve(server::Config {
             policy: policy.unwrap_or_else(paths::policy),
@@ -60,6 +100,14 @@ fn main() -> ExitCode {
             state_dir: state.unwrap_or_else(paths::state_dir),
             socket_mode,
         }),
+        Cmd::Status { json } => cmd::ops::status(&control, json),
+        Cmd::Sessions { json } => cmd::ops::sessions(&control, json),
+        Cmd::Approvals { json } => cmd::ops::approvals(&control, json),
+        Cmd::Approve { id } => cmd::ops::answer(&control, id, true, None),
+        Cmd::Deny { id, reason } => cmd::ops::answer(&control, id, false, reason),
+        Cmd::Freeze { reason } => cmd::ops::freeze(&control, reason),
+        Cmd::Unfreeze => cmd::ops::unfreeze(&control),
+        Cmd::Reload => cmd::ops::reload(&control),
     };
     match res {
         Ok(()) => ExitCode::SUCCESS,
