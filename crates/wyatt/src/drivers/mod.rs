@@ -19,6 +19,8 @@ pub enum Failure {
     Refused(String),
     Timeout(Duration),
     Failed(String),
+    /// Killed by the kill switch while it ran.
+    Stopped(String),
 }
 
 impl Failure {
@@ -27,6 +29,7 @@ impl Failure {
             Failure::Refused(_) => "refused",
             Failure::Timeout(_) => "timeout",
             Failure::Failed(_) => "error",
+            Failure::Stopped(_) => "stopped",
         }
     }
 }
@@ -36,6 +39,7 @@ impl fmt::Display for Failure {
         match self {
             Failure::Refused(m) | Failure::Failed(m) => f.write_str(m),
             Failure::Timeout(d) => write!(f, "killed after the {:?} timeout", d),
+            Failure::Stopped(reason) => write!(f, "killed by the kill switch: {reason}"),
         }
     }
 }

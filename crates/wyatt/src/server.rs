@@ -123,6 +123,8 @@ struct State {
     frozen: Mutex<Option<String>>,
     /// Process groups of running tools, by the audit seq of their decision.
     running: Mutex<HashMap<u64, i32>>,
+    /// Calls the kill switch cut short, with its reason, until their reply goes out.
+    stopped: Mutex<HashMap<u64, String>>,
     next_id: AtomicU64,
     connections: AtomicUsize,
     stats: Stats,
@@ -182,12 +184,19 @@ impl State {
             }
         }
         self.approval_cv.notify_all();
-        let killed: Vec<i32> = lock(&self.running).values().copied().collect();
-        for pg in &killed {
-            // SAFETY: signalling a process group this daemon started.
-            unsafe { libc::kill(-pg, libc::SIGKILL) };
-        }
-        self.log("control", json!({ "op": "freeze", "by": by, "reason": reason, "killed": killed.len() }));
+        // Both locks are held so a call cannot finish between being killed
+        // and being marked as stopped.
+        let killed = {
+            let running = lock(&self.running);
+            let mut stopped = lock(&self.stopped);
+            for (seq, pg) in running.iter() {
+                stopped.insert(*seq, reason.to_string());
+                // SAFETY: signalling a process group this daemon started.
+                unsafe { libc::kill(-pg, libc::SIGKILL) };
+            }
+            running.len()
+        };
+        self.log("control", json!({ "op": "freeze", "by": by, "reason": reason, "killed": killed }));
     }
 }
 
@@ -478,6 +487,12 @@ fn tool_call(st: &State, peer: &Peer, sess: &Mutex<Sess>, id: &Value, tool: &str
         lock(&st.running).insert(seq, pg);
     });
     lock(&st.running).remove(&seq);
+    // A tool killed by freeze exits on a signal, which the driver reports as
+    // an ordinary result. The agent should learn that it was stopped.
+    let result = match lock(&st.stopped).remove(&seq) {
+        Some(reason) => Err(drivers::Failure::Stopped(reason)),
+        None => result,
+    };
     let elapsed = started.elapsed().as_millis() as u64;
     match result {
         Ok(mut v) => {
@@ -890,6 +905,7 @@ pub fn serve(mut cfg: Config) -> anyhow::Result<()> {
         approval_cv: Condvar::new(),
         frozen: Mutex::new(None),
         running: Mutex::new(HashMap::new()),
+        stopped: Mutex::new(HashMap::new()),
         next_id: AtomicU64::new(1),
         connections: AtomicUsize::new(0),
         stats: Stats::default(),
