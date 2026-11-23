@@ -51,7 +51,7 @@ const BUILTIN: &[(&str, &str, usize)] = &[
     ("connection_string", r"\b[a-z][a-z0-9+.-]{1,20}://[^\s:/@]+:([^\s@/]+)@", 1),
     (
         "secret_assignment",
-        r#"(?i)(?:\b|_)(?:password|passwd|pwd|secret|client_secret|api[_-]?key|access[_-]?token|auth[_-]?token|private[_-]?key)\b["']?\s*[:=]\s*("[^"\n]{3,}"|'[^'\n]{3,}'|[^\s"',;]{3,})"#,
+        r#"(?i)(?:\b|_)(?:password|passwd|pwd|secret(?:[_-][a-z0-9_-]*)?|api[_-]?key|access[_-]?token|auth[_-]?token|refresh[_-]?token|private[_-]?key)\b["']?\s*[:=]\s*("[^"\n]{3,}"|'[^'\n]{3,}'|[^\s"',;]{3,})"#,
         1,
     ),
     ("card_number", r"\b(?:\d[ -]?){12,18}\d\b", 0),
@@ -195,6 +195,13 @@ mod tests {
     fn keeps_field_names() {
         let (out, _) = red("DB_PASSWORD=hunter22\npassword: \"s3cr3t value\"");
         assert_eq!(out, "DB_PASSWORD=[REDACTED:secret_assignment]\npassword: [REDACTED:secret_assignment]");
+        let (out, _) = red("AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG\naws_secret_access_key = abc123\nsecretary: Bob");
+        assert_eq!(
+            out,
+            "AWS_SECRET_ACCESS_KEY=[REDACTED:secret_assignment]\naws_secret_access_key = [REDACTED:secret_assignment]\nsecretary: Bob"
+        );
+        let (out, _) = red("max_tokens: 4096");
+        assert_eq!(out, "max_tokens: 4096");
         let (out, _) = red("postgres://app:pa55word@db:5432/x");
         assert_eq!(out, "postgres://app:[REDACTED:connection_string]@db:5432/x");
     }
