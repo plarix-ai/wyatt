@@ -11,6 +11,10 @@ pub struct Session {
     pub calls: u64,
     pub tools: BTreeSet<String>,
     pub limit_calls: BTreeMap<String, u64>,
+    /// Labels from the agent's other sessions since the daemon started.
+    /// Rules see this together with `labels` as `history.labels`, so an
+    /// agent cannot shed a label by opening a new session.
+    pub history: BTreeSet<String>,
 }
 
 impl Session {

@@ -144,6 +144,7 @@ Every rule that matches a call counts. One `deny` makes the call denied. Otherwi
 | `agent.labels`, `session.labels` | lists of labels |
 | `session.calls` | calls this session has made |
 | `session.tools` | tools this session has used |
+| `history.labels` | labels from every session of this agent since the daemon started, this one included |
 | `time.hour` | 0 to 23, UTC |
 | `time.weekday` | 0 (Monday) to 6, or `mon` to `sun` |
 
@@ -178,6 +179,8 @@ limits:
 ## Labels and DLP
 
 Labels record what a session has touched. A tool's `labels` and a rule's `labels` are added to the session after a call succeeds. Rules read them with `session.labels`, which is how a policy says "after reading the customer table, nothing may leave the network".
+
+The client names its session, so an agent that controls its own code could read a secret in one session and send it out from another. `history.labels` closes that: it holds the labels of all the agent's sessions. Use it for rules that guard against exfiltration by an agent you do not trust, and `session.labels` where a fresh task should start clean. History lives in memory and is cleared when the daemon restarts.
 
 Every tool output passes through the redactor before the agent sees it. Built-in detectors: `private_key`, `aws_access_key`, `github_token`, `gitlab_token`, `slack_token`, `anthropic_key`, `openai_key`, `stripe_key`, `google_api_key`, `jwt`, `connection_string`, `secret_assignment`, `card_number`. When one fires, the session gets the label `secret`.
 
@@ -216,4 +219,4 @@ tests:
     rule: no-exfil
 ```
 
-`before` runs earlier calls in the same session, and their `output` goes through DLP, so labels build up as they would in the daemon. `session` sets the starting state directly: `labels`, `calls`, `tools`, and `limits` (calls already counted against a `max_calls` limit). `code` and `rule` are optional extra checks on the result. `wyatt test` exits 1 if any case fails.
+`before` runs earlier calls in the same session, and their `output` goes through DLP, so labels build up as they would in the daemon. `session` sets the starting state directly: `labels`, `calls`, `tools`, `limits` (calls already counted against a `max_calls` limit) and `history` (labels from the agent's other sessions). `code` and `rule` are optional extra checks on the result. `wyatt test` exits 1 if any case fails.

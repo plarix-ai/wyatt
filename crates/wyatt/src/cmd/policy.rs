@@ -87,6 +87,9 @@ struct Prior {
     /// Calls already counted against each `max_calls` limit, by limit id.
     #[serde(default)]
     limits: BTreeMap<String, u64>,
+    /// Labels the agent's other sessions already carry.
+    #[serde(default)]
+    history: BTreeSet<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -156,6 +159,7 @@ fn run_case(p: &Policy, c: &Case) -> Result<Decision, String> {
         calls: c.session.calls,
         tools: c.session.tools.clone(),
         limit_calls: c.session.limits.clone(),
+        history: c.session.history.clone(),
     };
     let mut rates = RateState::default();
     for (i, step) in c.before.iter().enumerate() {
@@ -381,5 +385,17 @@ rules:
             "{{ name: c, agent: ops, tool: read, args: {{ path: /srv/a }}, {at}, session: {{ limits: {{ budgte: 1 }} }}, expect: allow }}"
         ));
         assert!(run_case(&p, &c).unwrap_err().contains("`budgte`"));
+    }
+
+    #[test]
+    fn cases_can_give_the_agent_a_history() {
+        let p = Policy::from_yaml(&format!(
+            "{POLICY}  - {{ id: no-exfil-any, deny: post, when: {{ history.labels: {{ contains: secret }} }} }}\n"
+        ))
+        .unwrap();
+        let c = case(
+            "{ name: a, agent: ops, tool: post, args: { url: 'https://api.example.com/x' }, session: { history: [secret] }, expect: deny, rule: no-exfil-any }",
+        );
+        run_case(&p, &c).unwrap();
     }
 }

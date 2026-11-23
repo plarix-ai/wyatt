@@ -211,6 +211,7 @@ fn check_field(f: &str, at: &str) -> Result<(), PolicyError> {
         "session.labels",
         "session.calls",
         "session.tools",
+        "history.labels",
         "time.hour",
         "time.weekday",
         "args",

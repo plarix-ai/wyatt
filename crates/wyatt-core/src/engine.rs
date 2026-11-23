@@ -114,6 +114,7 @@ impl Facts for Ctx<'_> {
             "agent" => owned(Value::from(self.agent.name.as_str())),
             "agent.labels" => owned(set(&self.agent.labels)),
             "session.labels" => owned(set(&self.session.labels)),
+            "history.labels" => owned(set(&self.session.history.union(&self.session.labels).cloned().collect())),
             "session.tools" => owned(set(&self.session.tools)),
             "session.calls" => owned(Value::from(self.session.calls)),
             "time.hour" => owned(Value::from((self.now_ms / 3_600_000) % 24)),
@@ -461,6 +462,22 @@ limits:
 
         let d = run(&p, &s, "ops", "post", post);
         assert_eq!((d.verdict, d.rule.as_deref()), (Verdict::Deny, Some("no-exfil")));
+    }
+
+    #[test]
+    fn history_labels_follow_the_agent_into_new_sessions() {
+        let p = Policy::from_yaml(
+            "version: 1\nagents: { ops: { uid: 1 } }\ntools: { post: { driver: http, method: post, hosts: [a.example.com] } }\nrules:\n  - { id: post, allow: post }\n  - { id: no-exfil, deny: post, when: { history.labels: { contains: secret } } }\n",
+        )
+        .unwrap();
+        let post = json!({"url": "https://a.example.com/x"});
+        assert_eq!(run(&p, &Session::default(), "ops", "post", post.clone()).verdict, Verdict::Allow);
+        // Another session read the secret; this one did not.
+        let fresh = Session { history: ["secret".to_string()].into(), ..Session::default() };
+        assert_eq!(run(&p, &fresh, "ops", "post", post.clone()).rule.as_deref(), Some("no-exfil"));
+        // The session's own labels count too.
+        let own = Session { labels: ["secret".to_string()].into(), ..Session::default() };
+        assert_eq!(run(&p, &own, "ops", "post", post).rule.as_deref(), Some("no-exfil"));
     }
 
     #[test]

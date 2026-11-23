@@ -119,6 +119,8 @@ struct State {
     audit: Audit,
     rates: Mutex<RateState>,
     sessions: Mutex<Sessions>,
+    /// Every label any session of an agent has carried, by agent.
+    history: Mutex<HashMap<String, BTreeSet<String>>>,
     approvals: Mutex<BTreeMap<u64, Pending>>,
     approval_cv: Condvar,
     frozen: Mutex<Option<String>>,
@@ -155,6 +157,15 @@ impl State {
     }
 
     /// Audit failures stop the daemon: enforcement without a record is not allowed.
+    /// Adds the session's labels to its agent's history and hands the
+    /// history back to the session for the next decision.
+    fn share_labels(&self, s: &mut Sess) {
+        let mut h = lock(&self.history);
+        let all = h.entry(s.agent.clone()).or_default();
+        all.extend(s.state.labels.iter().cloned());
+        s.state.history.clone_from(all);
+    }
+
     fn log(&self, kind: &str, v: Value) -> u64 {
         match self.audit.append(kind, rec(v)) {
             Ok(seq) => seq,
@@ -326,6 +337,7 @@ fn decide(
     // Decide and count the call under one lock, so two connections sharing a
     // session cannot both take the last slot of a limit.
     let mut s = lock(sess);
+    st.share_labels(&mut s);
     let mut rates = lock(&st.rates);
     let d = engine::decide(p, &Request { agent: &agent, tool, args }, &s.state, &rates, now, false);
     engine::record_attempt(&mut rates, p, &agent, &d, now);
@@ -354,6 +366,7 @@ fn decide(
     // tool runs without coming back here first.
     if verdict == Verdict::Allow || (verdict == Verdict::Approve && client_asks) {
         s.state.record_success(tool, &d.labels, &d.limits);
+        st.share_labels(&mut s);
         s.last_used = Instant::now();
     }
     drop(s);
@@ -408,7 +421,9 @@ fn decide(
     out.verdict = v;
     out.code = code.into();
     if v == Verdict::Allow {
-        lock(sess).state.record_success(tool, &labels, &limits);
+        let mut s = lock(sess);
+        s.state.record_success(tool, &labels, &limits);
+        st.share_labels(&mut s);
         st.stats.allow.fetch_add(1, Ordering::Relaxed);
     } else {
         out.reason = if why.is_empty() { format!("approval {code}") } else { why };
@@ -436,13 +451,14 @@ fn wait_for_answer(st: &State, id: u64, timeout: Duration) -> Answer {
 }
 
 /// DLP on tool output. A hit adds `secret` to the session when the policy asks.
-fn scrub(loaded: &Loaded, sess: &Mutex<Sess>, out: &mut Value) -> (Findings, BTreeSet<String>) {
+fn scrub(st: &State, loaded: &Loaded, sess: &Mutex<Sess>, out: &mut Value) -> (Findings, BTreeSet<String>) {
     let p = &loaded.policy;
     let mut f = Findings::new();
     p.dlp.redact_value(out, &mut f);
     let mut s = lock(sess);
     if !f.is_empty() && p.label_secrets {
         s.state.labels.insert("secret".into());
+        st.share_labels(&mut s);
     }
     (f, s.state.labels.clone())
 }
@@ -505,7 +521,7 @@ fn tool_call(st: &State, peer: &Peer, sess: &Mutex<Sess>, id: &Value, tool: &str
     let elapsed = started.elapsed().as_millis() as u64;
     match result {
         Ok(mut v) => {
-            let (found, labels) = scrub(&loaded, sess, &mut v);
+            let (found, labels) = scrub(st, &loaded, sess, &mut v);
             let (bytes, sha) = digest(&v);
             st.log(
                 "outcome",
@@ -533,7 +549,7 @@ fn tool_result(st: &State, sess: &Mutex<Sess>, id: &Value, ticket: &str, ok: boo
     let Some(t) = lock(sess).tickets.remove(ticket) else {
         return proto::protocol_error(id, format!("unknown or already used ticket `{ticket}`"));
     };
-    let (found, labels) = scrub(&loaded, sess, &mut output);
+    let (found, labels) = scrub(st, &loaded, sess, &mut output);
     let (bytes, sha) = digest(&output);
     st.log(
         "outcome",
@@ -917,6 +933,7 @@ pub fn serve(mut cfg: Config) -> anyhow::Result<()> {
         frozen: Mutex::new(None),
         running: Mutex::new(HashMap::new()),
         stopped: Mutex::new(HashMap::new()),
+        history: Mutex::new(HashMap::new()),
         next_id: AtomicU64::new(1),
         connections: AtomicUsize::new(0),
         stats: Stats::default(),
