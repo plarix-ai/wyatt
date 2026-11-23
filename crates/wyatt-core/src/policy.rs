@@ -359,6 +359,9 @@ pub struct Sandbox {
 #[derive(Debug, Clone)]
 pub struct Tool {
     pub name: String,
+    /// Set when the name is a pattern such as `mcp__github__*`. The tool then
+    /// stands for every name it matches. Only delegate and mcp tools may.
+    pub pattern: Option<globset::GlobMatcher>,
     pub driver: Driver,
     pub description: String,
     pub args: Args,
@@ -505,8 +508,15 @@ impl Policy {
         if cx.errors.is_empty() { Ok(p) } else { Err(PolicyErrors(cx.errors)) }
     }
 
+    /// The tool for a call name: an exact entry, else the most specific
+    /// pattern entry that matches.
     pub fn tool(&self, name: &str) -> Option<&Tool> {
-        self.tools.get(name)
+        self.tools.get(name).or_else(|| {
+            self.tools
+                .values()
+                .filter(|t| t.pattern.as_ref().is_some_and(|m| m.is_match(name)))
+                .max_by_key(|t| t.name.chars().filter(|c| !matches!(c, '*' | '?')).count())
+        })
     }
 }
 
@@ -548,10 +558,22 @@ fn compile(raw: RawPolicy, digest: String, cx: &mut Ctx) -> Policy {
     let mut tools = BTreeMap::new();
     for (name, t) in raw.tools {
         let at = format!("tools.{name}");
-        if !valid_name(&name) {
-            cx.err(&at, "tool names use letters, digits and _-.:/");
+        let is_pattern = name.contains(['*', '?']);
+        let plain = name.replace(['*', '?'], "x");
+        if !valid_name(&plain) {
+            cx.err(&at, "tool names use letters, digits and _-.:/, plus * and ? in patterns");
         }
-        if let Some(tool) = compile_tool(name.clone(), t, &at, timeout, max_output, cx) {
+        if let Some(mut tool) = compile_tool(name.clone(), t, &at, timeout, max_output, cx) {
+            if is_pattern {
+                if tool.driver.is_mediated() {
+                    cx.err(&at, "only delegate and mcp tools can have a pattern for a name");
+                }
+                tool.pattern = cx.take(
+                    globset::Glob::new(&name)
+                        .map(|g| g.compile_matcher())
+                        .map_err(|e| PolicyError { at: at.clone(), msg: e.to_string() }),
+                );
+            }
             tools.insert(name, tool);
         }
     }
@@ -739,6 +761,7 @@ fn compile_tool(
     let labels = cx.labels(&format!("{at}.labels"), t.labels);
     Some(Tool {
         name,
+        pattern: None,
         driver,
         description: t.description,
         args,

@@ -42,8 +42,13 @@ fn covers(outer: Option<&Names>, inner: Option<&Names>) -> bool {
     }
 }
 
+/// Whether a rule's tool names can reach this tool entry.
+fn reaches(names: &crate::policy::Names, t: &Tool) -> bool {
+    names.matches(&t.name) || t.pattern.as_ref().is_some_and(|m| names.literals().any(|l| m.is_match(l)))
+}
+
 fn targeted<'a>(p: &'a Policy, r: &Rule) -> Vec<&'a Tool> {
-    p.tools.values().filter(|t| r.tools.matches(&t.name)).collect()
+    p.tools.values().filter(|t| reaches(&r.tools, t)).collect()
 }
 
 pub fn lint(p: &Policy) -> Vec<Diag> {
@@ -66,7 +71,7 @@ pub fn lint(p: &Policy) -> Vec<Diag> {
         let at = format!("rules[{i}] `{}`", r.id);
         let tools = targeted(p, r);
         for lit in r.tools.literals() {
-            if !p.tools.contains_key(lit) {
+            if p.tool(lit).is_none() {
                 out.push(Level::Error, &at, format!("unknown tool `{lit}`"));
             }
         }
@@ -109,7 +114,7 @@ pub fn lint(p: &Policy) -> Vec<Diag> {
 
     for t in p.tools.values() {
         let at = format!("tools.{}", t.name);
-        if !p.rules.iter().any(|r| r.effect != Effect::Deny && r.tools.matches(&t.name)) {
+        if !p.rules.iter().any(|r| r.effect != Effect::Deny && reaches(&r.tools, t)) {
             out.push(Level::Note, &at, "no allow or approve rule covers this tool, so every call to it is denied");
         }
         if matches!(t.args, Args::Any) {

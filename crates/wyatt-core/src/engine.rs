@@ -90,6 +90,8 @@ impl Decision {
 }
 
 struct Ctx<'a> {
+    /// The name the call used; differs from `tool.name` for pattern tools.
+    name: &'a str,
     tool: &'a Tool,
     agent: &'a Agent,
     args: &'a Value,
@@ -109,7 +111,7 @@ impl Facts for Ctx<'_> {
         }
         let owned = |v: Value| Some(Cow::Owned(v));
         match p {
-            "tool" => owned(Value::from(self.tool.name.as_str())),
+            "tool" => owned(Value::from(self.name)),
             "agent" => owned(Value::from(self.agent.name.as_str())),
             "agent.labels" => owned(set(&self.agent.labels)),
             "session.labels" => owned(set(&self.session.labels)),
@@ -273,17 +275,17 @@ pub fn decide(p: &Policy, req: &Request, s: &Session, rates: &RateState, now_ms:
     let Some(agent) = p.agents.get(req.agent) else {
         return d.deny(Code::UnknownAgent, format!("unknown agent `{}`", req.agent));
     };
-    let Some(tool) = p.tools.get(req.tool) else {
+    let Some(tool) = p.tool(req.tool) else {
         return d.deny(Code::UnknownTool, format!("unknown tool `{}`", req.tool));
     };
     let mut d = d;
-    d.limits = p.limits.iter().filter(|l| l.applies(&agent.name, &tool.name)).map(|l| l.id.clone()).collect();
+    d.limits = p.limits.iter().filter(|l| l.applies(&agent.name, req.tool)).map(|l| l.id.clone()).collect();
     let (args, derived) = match validate(tool, req.args) {
         Ok(x) => x,
         Err((code, msg)) => return d.deny(code, msg),
     };
     d.args = args;
-    let cx = Ctx { tool, agent, args: &d.args, derived: &derived, session: s, now_ms };
+    let cx = Ctx { name: req.tool, tool, agent, args: &d.args, derived: &derived, session: s, now_ms };
 
     let mut deny: Option<&Rule> = None;
     let mut approve: Option<&Rule> = None;
@@ -291,7 +293,7 @@ pub fn decide(p: &Policy, req: &Request, s: &Session, rates: &RateState, now_ms:
     let mut labels = tool.labels.clone();
     let mut approvers = BTreeSet::new();
     let mut trace = Vec::new();
-    for rule in p.rules.iter().filter(|r| r.targets(&agent.name, &tool.name)) {
+    for rule in p.rules.iter().filter(|r| r.targets(&agent.name, req.tool)) {
         let matched = rule.when.eval(&cx);
         if explain {
             let note = if matched { String::new() } else { rule.when.why_not(&cx).unwrap_or_default() };
@@ -323,11 +325,11 @@ pub fn decide(p: &Policy, req: &Request, s: &Session, rates: &RateState, now_ms:
         return d.deny(Code::Rule, reason);
     }
     let Some(r) = approve.or(allow) else {
-        let reason = format!("no rule allows `{}` for agent `{}`", tool.name, agent.name);
+        let reason = format!("no rule allows `{}` for agent `{}`", req.tool, agent.name);
         return d.deny(Code::NoRule, reason);
     };
 
-    for l in p.limits.iter().filter(|l| l.applies(&agent.name, &tool.name)) {
+    for l in p.limits.iter().filter(|l| l.applies(&agent.name, req.tool)) {
         if let Some((count, window)) = l.rate
             && rates.would_exceed(&l.id, &agent.name, count, window, now_ms)
         {
@@ -498,6 +500,21 @@ limits:
         let d = run(&p, &s, "a", "Read", json!({"file_path": "/work/../home/u/.ssh/id_ed25519"}));
         assert_eq!(d.verdict, Verdict::Deny);
         assert_eq!(run(&p, &s, "a", "Read", json!({"file_path": "notes.txt"})).code, Code::BadArgs);
+    }
+
+    #[test]
+    fn pattern_tools_cover_mcp_servers() {
+        let p = Policy::from_yaml(
+            "version: 1\nagents: { a: { uid: 1 } }\ntools:\n  mcp__gh__*: { driver: mcp, args: any }\n  mcp__gh__delete_repo: { driver: mcp, args: { name: string } }\nrules:\n  - { id: gh, allow: mcp__gh__*, when: { tool: { ne: mcp__gh__delete_repo } } }\n  - { id: issues, approve: mcp__gh__create_issue }\n",
+        )
+        .unwrap();
+        let s = Session::default();
+        assert_eq!(run(&p, &s, "a", "mcp__gh__list_issues", json!({"q": 1})).verdict, Verdict::Allow);
+        assert_eq!(run(&p, &s, "a", "mcp__gh__create_issue", json!({})).verdict, Verdict::Approve);
+        // The exact entry wins over the pattern, and no rule allows it.
+        assert_eq!(run(&p, &s, "a", "mcp__gh__delete_repo", json!({"name": "x"})).code, Code::NoRule);
+        assert_eq!(run(&p, &s, "a", "mcp__other__x", json!({})).code, Code::UnknownTool);
+        assert!(Policy::from_yaml("version: 1\ntools:\n  run*: { driver: proc, command: [/bin/true] }\n").is_err());
     }
 
     #[test]
