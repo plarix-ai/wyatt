@@ -9,9 +9,11 @@
 //! The chain cannot show that records were cut from the end. Ship the head
 //! (`wyatt audit verify` prints it) to another system if that matters.
 //!
-//! Several processes append to one log: the daemon, MCP gateways and the
-//! Claude Code hook. Each append holds an exclusive `flock` while it reads the
-//! head from the end of the file and writes its line.
+//! Only the daemon writes the log; MCP gateways and the Claude Code hook send
+//! their events to it with the `notice` op. Each append still holds an
+//! exclusive `flock` while it reads the head from the end of the file and
+//! writes its line, so a second daemon pointed at the same state directory
+//! by mistake cannot fork the chain.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write};
