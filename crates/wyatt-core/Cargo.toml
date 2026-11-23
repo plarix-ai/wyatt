@@ -1,0 +1,17 @@
+[package]
+name = "wyatt-core"
+description = "Policy model and decision engine for the Wyatt agent reference monitor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+globset = "0.4.19"
+hex = "0.4.3"
+regex = "1.13.2"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+serde_yaml_ng = "0.10.0"
+sha2 = "0.11.0"

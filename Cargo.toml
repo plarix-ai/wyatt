@@ -1,0 +1,21 @@
+[workspace]
+resolver = "3"
+members = ["crates/wyatt-core", "crates/wyatt"]
+
+[workspace.package]
+version = "1.0.0-rc.1"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/plarix-ai/wyatt"
+rust-version = "1.85"
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.test]
+debug = "line-tables-only"
+
+[profile.release]
+lto = "thin"
+strip = true
+panic = "abort"

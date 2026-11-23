@@ -1,0 +1,15 @@
+[package]
+name = "wyatt"
+description = "Runtime policy enforcement daemon and CLI for AI agents"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "wyatt"
+path = "src/main.rs"
+
+[dependencies]
+wyatt-core = { path = "../wyatt-core" }
