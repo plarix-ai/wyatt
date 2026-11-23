@@ -89,6 +89,41 @@ enum Cmd {
     },
     /// Make a random agent token and the hash to put in the policy.
     Token,
+    /// Put policy in front of a stdio MCP server.
+    ///
+    /// Use as the server command in an MCP host:
+    /// wyatt mcp --server github -- npx -y @modelcontextprotocol/server-github
+    Mcp {
+        /// Server name; policy tools are named mcp__<server>__<tool>.
+        #[arg(long)]
+        server: String,
+        /// Agent name in the policy.
+        #[arg(long, default_value = "mcp")]
+        agent: String,
+        /// Agent socket [env: WYATT_SOCKET]
+        #[arg(long)]
+        socket: Option<PathBuf>,
+        /// State directory for pins and the audit log [env: WYATT_STATE]
+        #[arg(long)]
+        state: Option<PathBuf>,
+        /// Session name shared with other clients.
+        #[arg(long)]
+        session: Option<String>,
+        /// Keep tools whose definitions look poisoned.
+        #[arg(long)]
+        allow_flagged: bool,
+        /// Accept changed tool definitions and pin them again.
+        #[arg(long)]
+        repin: bool,
+        /// Only list the server's tools and report what looks wrong.
+        #[arg(long)]
+        scan: bool,
+        #[arg(long, requires = "scan")]
+        json: bool,
+        /// The server command and its arguments.
+        #[arg(last = true, required = true)]
+        command: Vec<String>,
+    },
     /// Hook into an agent runtime that has a hook system.
     Hook {
         #[command(subcommand)]
@@ -244,6 +279,23 @@ fn main() -> ExitCode {
         Cmd::Bench { tool, args, agent, policy, n } => ok(json_arg(&args)
             .and_then(|args| cmd::policy::bench(&policy.unwrap_or_else(paths::policy), &agent, &tool, args, n.max(1)))),
         Cmd::Token => ok(cmd::policy::token()),
+        Cmd::Mcp { server, agent, socket, state, session, allow_flagged, repin, scan, json, command } => {
+            if scan {
+                cmd::mcp::scan(&server, &command, json).and_then(|ok| done(ok, 1))
+            } else {
+                cmd::mcp::gateway(cmd::mcp::Opts {
+                    server,
+                    command,
+                    agent,
+                    socket: socket.unwrap_or_else(paths::agent_socket),
+                    state: state.unwrap_or_else(paths::state_dir),
+                    session,
+                    allow_flagged,
+                    repin,
+                })
+                .map(|code| ExitCode::from(u8::try_from(code).unwrap_or(1)))
+            }
+        }
         Cmd::Hook { cmd: HookCmd::ClaudeCode { agent, socket, auto_allow, print_settings } } => {
             if print_settings {
                 println!("{}", cmd::hook::settings());
