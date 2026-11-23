@@ -195,7 +195,8 @@ mod tests {
     fn keeps_field_names() {
         let (out, _) = red("DB_PASSWORD=hunter22\npassword: \"s3cr3t value\"");
         assert_eq!(out, "DB_PASSWORD=[REDACTED:secret_assignment]\npassword: [REDACTED:secret_assignment]");
-        let (out, _) = red("AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG\naws_secret_access_key = abc123\nsecretary: Bob");
+        let (out, _) =
+            red("AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG\naws_secret_access_key = abc123\nsecretary: Bob");
         assert_eq!(
             out,
             "AWS_SECRET_ACCESS_KEY=[REDACTED:secret_assignment]\naws_secret_access_key = [REDACTED:secret_assignment]\nsecretary: Bob"
