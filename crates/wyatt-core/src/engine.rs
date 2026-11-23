@@ -46,6 +46,7 @@ pub enum Code {
     PathEscape,
     RateLimited,
     CallLimit,
+    Egress,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -146,14 +147,15 @@ pub fn validate(tool: &Tool, args: &Value) -> Result<(Value, BTreeMap<String, Va
     let Args::Schema(schema) = &tool.args else {
         return Ok((Value::Object(obj), BTreeMap::new()));
     };
-    if let Some(k) = obj.keys().find(|k| !schema.contains_key(*k)) {
+    if let Some(k) = obj.keys().find(|k| !tool.extra_args && !schema.contains_key(*k)) {
         let known: Vec<&str> = schema.keys().map(String::as_str).collect();
         return Err((
             Code::BadArgs,
             format!("unknown argument `{k}` for `{}` (takes: {})", tool.name, known.join(", ")),
         ));
     }
-    let mut out = Map::new();
+    let mut out: Map<String, Value> =
+        obj.iter().filter(|(k, _)| !schema.contains_key(*k)).map(|(k, v)| (k.clone(), v.clone())).collect();
     let mut derived = BTreeMap::new();
     for (name, spec) in schema {
         let v = match obj.get(name).filter(|v| !v.is_null()) {
@@ -194,6 +196,11 @@ fn check_arg(
         ArgType::Url => {
             let Some(s) = v.as_str() else { return bad("a URL string") };
             let u = Url::parse(s).map_err(|e| (Code::BadArgs, format!("argument `{name}`: {e}")))?;
+            if let Some(hosts) = &tool.host_set
+                && !hosts.is_match(u.bare_host())
+            {
+                return Err((Code::Egress, format!("host {} is not in the allowlist of `{}`", u.host, tool.name)));
+            }
             derived.insert(format!("args.{name}.host"), Value::from(u.host.as_str()));
             derived.insert(format!("args.{name}.scheme"), Value::from(u.scheme.as_str()));
             derived.insert(format!("args.{name}.port"), Value::from(u.port));
@@ -436,6 +443,7 @@ limits:
         assert_eq!(run(&p, &s, "ops", "read_file", json!({"path": "../../etc/shadow"})).code, Code::PathEscape);
         assert_eq!(run(&p, &s, "ops", "deploy", json!({"env": "qa"})).code, Code::BadArgs);
         assert_eq!(run(&p, &s, "ops", "fetch", json!({"url": "file:///etc/passwd"})).code, Code::BadArgs);
+        assert_eq!(run(&p, &s, "ops", "post", json!({"url": "https://evil.example.net/"})).code, Code::Egress);
     }
 
     #[test]
@@ -476,6 +484,20 @@ limits:
         assert_eq!(run(&p, &s, "a", "get", json!({"url": "https://API.github.com/repos"})).verdict, Verdict::Allow);
         assert_eq!(run(&p, &s, "a", "get", json!({"url": "https://api.github.com.evil.io/"})).verdict, Verdict::Deny);
         assert_eq!(run(&p, &s, "a", "get", json!({"url": "http://api.github.com/"})).verdict, Verdict::Deny);
+    }
+
+    #[test]
+    fn extra_args_pass_through_but_declared_ones_are_checked() {
+        let p = Policy::from_yaml(
+            "version: 1\nagents: { a: { uid: 1 } }\ntools:\n  Read: { driver: delegate, args: { file_path: path, \"*\": any } }\nrules:\n  - { id: r, allow: Read, when: { args.file_path: { glob: \"/work/**\" } } }\n",
+        )
+        .unwrap();
+        let s = Session::default();
+        let d = run(&p, &s, "a", "Read", json!({"file_path": "/work/a.rs", "limit": 20}));
+        assert_eq!((d.verdict, d.args["limit"].clone()), (Verdict::Allow, json!(20)));
+        let d = run(&p, &s, "a", "Read", json!({"file_path": "/work/../home/u/.ssh/id_ed25519"}));
+        assert_eq!(d.verdict, Verdict::Deny);
+        assert_eq!(run(&p, &s, "a", "Read", json!({"file_path": "notes.txt"})).code, Code::BadArgs);
     }
 
     #[test]

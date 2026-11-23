@@ -362,6 +362,8 @@ pub struct Tool {
     pub driver: Driver,
     pub description: String,
     pub args: Args,
+    /// `"*": any` in the schema: undeclared arguments pass through unchecked.
+    pub extra_args: bool,
     pub labels: BTreeSet<String>,
     pub timeout: Duration,
     pub max_output: usize,
@@ -720,7 +722,7 @@ fn compile_tool(
         })
         .flatten();
 
-    let args = compile_args(t.args.as_ref(), driver, &method, at, cx);
+    let (args, extra_args) = compile_args(t.args.as_ref(), driver, &method, at, cx);
 
     let sandbox = match t.sandbox {
         Some(s) => Sandbox {
@@ -740,6 +742,7 @@ fn compile_tool(
         driver,
         description: t.description,
         args,
+        extra_args,
         labels,
         timeout: cx.unit(&format!("{at}.timeout"), t.timeout.as_ref(), units::duration).unwrap_or(timeout),
         max_output: cx.unit(&format!("{at}.max_output"), t.max_output.as_ref(), units::size).unwrap_or(max_output),
@@ -768,18 +771,26 @@ fn abs_paths(cx: &mut Ctx, at: &str, ps: Vec<String>) -> Vec<String> {
         .collect()
 }
 
-fn compile_args(raw: Option<&Value>, driver: Driver, method: &str, at: &str, cx: &mut Ctx) -> Args {
+fn compile_args(raw: Option<&Value>, driver: Driver, method: &str, at: &str, cx: &mut Ctx) -> (Args, bool) {
     let mut schema = BTreeMap::new();
+    let mut extra = false;
     match raw {
         Some(Value::String(s)) if s == "any" => {
             if driver != Driver::Delegate && driver != Driver::Mcp {
                 cx.err(format!("{at}.args"), "`args: any` is only allowed for delegate and mcp tools");
             }
-            return Args::Any;
+            return (Args::Any, false);
         }
         Some(Value::Object(m)) => {
             for (name, spec) in m {
                 let here = format!("{at}.args.{name}");
+                if name == "*" {
+                    if spec.as_str() != Some("any") || driver.is_mediated() {
+                        cx.err(&here, "`\"*\": any` is the only wildcard, and only delegate and mcp tools take it");
+                    }
+                    extra = true;
+                    continue;
+                }
                 if let Some(s) = compile_arg(spec, &here, cx) {
                     schema.insert(name.clone(), s);
                 }
@@ -814,7 +825,7 @@ fn compile_args(raw: Option<&Value>, driver: Driver, method: &str, at: &str, cx:
             }
         }
     }
-    Args::Schema(schema)
+    (Args::Schema(schema), extra)
 }
 
 fn compile_arg(spec: &Value, at: &str, cx: &mut Ctx) -> Option<ArgSpec> {
