@@ -90,9 +90,8 @@ impl Decision {
 }
 
 struct Ctx<'a> {
-    /// The name the call used; differs from `tool.name` for pattern tools.
+    /// The name the call used, which a pattern tool does not fix.
     name: &'a str,
-    tool: &'a Tool,
     agent: &'a Agent,
     args: &'a Value,
     derived: &'a BTreeMap<String, Value>,
@@ -285,7 +284,7 @@ pub fn decide(p: &Policy, req: &Request, s: &Session, rates: &RateState, now_ms:
         Err((code, msg)) => return d.deny(code, msg),
     };
     d.args = args;
-    let cx = Ctx { name: req.tool, tool, agent, args: &d.args, derived: &derived, session: s, now_ms };
+    let cx = Ctx { name: req.tool, agent, args: &d.args, derived: &derived, session: s, now_ms };
 
     let mut deny: Option<&Rule> = None;
     let mut approve: Option<&Rule> = None;
