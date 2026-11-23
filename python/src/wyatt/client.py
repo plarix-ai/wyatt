@@ -7,6 +7,7 @@ and a line reader.
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import inspect
 import json
@@ -15,7 +16,7 @@ import socket
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Mapping, Optional, TypeVar
+from typing import Any, Awaitable, Callable, Mapping, Optional, TypeVar
 
 MAX_LINE = 1 << 20
 
@@ -182,6 +183,9 @@ class _Line:
 
 
 def _jsonable(v: Any) -> Any:
+    dump = getattr(v, "model_dump", None)  # pydantic v2 models, common in agent frameworks
+    if callable(dump):
+        return dump(mode="json")
     if isinstance(v, (set, frozenset, tuple)):
         return list(v)
     if isinstance(v, bytes):
@@ -325,6 +329,24 @@ class Client:
         rep = self.report(d.ticket, _wire(out))
         return rep.output if rep.redacted else out
 
+    async def arun(self, tool: str, fn: Callable[..., Awaitable[Any]], args: Mapping[str, Any]) -> Any:
+        """`run` for coroutines. Daemon requests run in a worker thread, so an
+        approval wait does not block the event loop."""
+        d = await asyncio.to_thread(self.check, tool, args)
+        if not d.allowed:
+            raise Denied(tool, d)
+        checked = d.args if isinstance(d.args, Mapping) else args
+        try:
+            out = await fn(**checked)
+        except Exception as e:
+            if d.ticket:
+                await asyncio.to_thread(self.report, d.ticket, f"{type(e).__name__}: {e}", ok=False)
+            raise
+        if not d.ticket:
+            return out
+        rep = await asyncio.to_thread(self.report, d.ticket, _wire(out))
+        return rep.output if rep.redacted else out
+
     def tool(self, name: Optional[str] = None) -> Callable[[F], F]:
         """Decorator for a delegate tool: every call goes through `run`.
 
@@ -335,6 +357,16 @@ class Client:
         def wrap(fn: F) -> F:
             sig = inspect.signature(fn)
             tool_name = name or fn.__name__
+
+            if inspect.iscoroutinefunction(fn):
+
+                @functools.wraps(fn)
+                async def aguarded(*a: Any, **kw: Any) -> Any:
+                    bound = sig.bind(*a, **kw)
+                    bound.apply_defaults()
+                    return await self.arun(tool_name, fn, dict(bound.arguments))
+
+                return aguarded  # type: ignore[return-value]
 
             @functools.wraps(fn)
             def guarded(*a: Any, **kw: Any) -> Any:
