@@ -204,3 +204,7 @@ wyatt test examples/*/tests.yaml
 ```
 
 The crates are `wyatt-core` (policy model, conditions, decision engine, DLP, MCP checks; no I/O and no clock, so every decision is reproducible) and `wyatt` (daemon, CLI, drivers, audit log, MCP gateway, hooks).
+
+## Author
+
+Built by [Aryan Haghighi](https://www.aryanhaghighi.com) at [Plarix](https://plarix.dev). To cite it, use `CITATION.cff` (GitHub's "Cite this repository" button).

@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use this, please cite it as below."
+title: "Wyatt"
+type: software
+authors:
+  - given-names: Aryan
+    family-names: Haghighi
+    alias: CipherDriftX
+    website: "https://www.aryanhaghighi.com"
+repository-code: "https://github.com/plarix-ai/wyatt"
+abstract: "Runtime policy enforcement daemon for AI agents. It checks every tool call against a policy, runs the tool itself in a sandbox, removes secrets from the output and signs an audit record."
+keywords:
+  - "AI agents"
+  - "agent security"
+  - "policy enforcement"
+  - "prompt injection"
+  - "sandbox"
+  - "Landlock"
+  - "audit log"
+version: "1.0.0-rc.1"
